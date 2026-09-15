@@ -105,7 +105,7 @@ begin
   from jsonb_array_elements(chosen.board_json->'categories') with ordinality c(category, category_order);
 
   loop
-    new_code := upper(substr(translate(encode(gen_random_bytes(6), 'base64'), '/+=', 'XYZ'), 1, 6));
+    new_code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6));
     exit when new_code ~ '^[A-Z0-9]{6}$' and not exists (select 1 from public.jeopardy_sessions where join_code = new_code);
   end loop;
 
@@ -209,19 +209,18 @@ security definer
 set search_path = public
 as $$
 declare
-  selected public.jeopardy_teams%rowtype;
-  session_state text;
+  selected record;
 begin
   if not public.is_teacher() then raise exception 'Teacher access required' using errcode = '42501'; end if;
 
-  select t, s.state into selected, session_state
+  select t.*, s.state as session_state into selected
   from public.jeopardy_teams t
   join public.jeopardy_sessions s on s.id = t.session_id
   where t.id = p_team_id and s.teacher_id = auth.uid()
   for update of t;
 
   if not found then raise exception 'Team not found'; end if;
-  if session_state <> 'final_answer' then raise exception 'Final responses are not ready to score'; end if;
+  if selected.session_state <> 'final_answer' then raise exception 'Final responses are not ready to score'; end if;
   if selected.final_scored then raise exception 'This final response has already been scored'; end if;
 
   update public.jeopardy_teams

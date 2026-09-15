@@ -7,6 +7,7 @@
     "test": "node --test",
     "build": "node scripts/build.mjs",
     "check": "npm test && node scripts/build.mjs",
+    "verify:production": "node scripts/verify-production.mjs",
     "serve": "python -m http.server 4174 --directory dist"
   },
   "engines": {

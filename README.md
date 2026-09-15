@@ -21,6 +21,7 @@ Classroom-friendly Jeopardy game for `jeopardy.mrflorence.com`.
 
 - `npm test`
 - `npm run build` (requires `SUPABASE_URL` and `SUPABASE_ANON_KEY`)
+- `npm run verify:production` (requires `TEACHER_EMAIL`; creates and removes isolated verification data)
 - `npm run serve`
 
-Apply `supabase/migrations/0006_jeopardy_schema.sql` to the shared Supabase project before deploying.
+Apply every file in `supabase/migrations/` in filename order. The first five migrations are the shared teacher/auth foundation; `0006_jeopardy_schema.sql` adds the isolated Jeopardy tables and RPCs.
