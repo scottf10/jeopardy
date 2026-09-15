@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#081f67">
+    <meta name="description" content="Join a classroom Jeopardy game.">
+    <title>Classroom Jeopardy</title>
+    <link rel="stylesheet" href="./css/styles.css">
+  </head>
+  <body>
+    <main class="team-app">
+      <section id="join-view" class="panel join-panel" aria-labelledby="join-title">
+        <p class="eyebrow">Classroom game</p>
+        <h1 id="join-title">Jeopardy!</h1>
+        <p>Enter the code on the teacher's screen, then choose a team name.</p>
+        <form id="join-form">
+          <label for="join-code">Game code</label>
+          <input id="join-code" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ABC123" required>
+          <label for="team-name">Team name</label>
+          <input id="team-name" maxlength="24" autocomplete="nickname" placeholder="The Scholars" required>
+          <p id="join-message" class="message" role="status"></p>
+          <button class="button primary" type="submit">Join game</button>
+        </form>
+      </section>
+
+      <section id="game-view" class="game-view" hidden>
+        <header class="game-header">
+          <div><p class="eyebrow">Classroom Jeopardy</p><h1 id="game-title">Game</h1></div>
+          <div class="team-identity"><strong id="my-team-name"></strong><span id="my-score">$0</span></div>
+        </header>
+        <div id="connection-message" class="connection-message">Connected</div>
+        <section id="team-content" class="team-content" aria-live="polite"></section>
+        <section class="scoreboard-wrap"><h2>Scoreboard</h2><div id="scoreboard" class="scoreboard"></div></section>
+      </section>
+    </main>
+    <footer><a href="./privacy.html">Privacy</a></footer>
+    <script src="./runtime-config.js"></script>
+    <script type="module" src="./js/team-app.js"></script>
+  </body>
+</html>

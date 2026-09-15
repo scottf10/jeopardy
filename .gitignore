@@ -1,0 +1,7 @@
+dist/
+node_modules/
+supabase/.temp/
+.env
+.dev.vars
+.template-preview/
+*.inspect.ndjson

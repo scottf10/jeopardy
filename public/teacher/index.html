@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#081f67">
+    <title>Jeopardy — Teacher</title>
+    <link rel="stylesheet" href="../css/styles.css">
+  </head>
+  <body class="teacher-body">
+    <main>
+      <section id="auth-view" class="panel auth-panel">
+        <p class="eyebrow">Teacher control room</p>
+        <h1>Classroom Jeopardy</h1>
+        <p>Sign in with your approved Google account to manage games.</p>
+        <p id="auth-message" class="message" role="status"></p>
+        <button id="sign-in" class="button primary" type="button">Sign in with Google</button>
+      </section>
+
+      <section id="dashboard-view" hidden>
+        <header class="teacher-header">
+          <div><p class="eyebrow">Teacher control room</p><h1>Classroom Jeopardy</h1></div>
+          <button id="sign-out" class="button secondary" type="button">Sign out</button>
+        </header>
+        <p id="dashboard-message" class="message" role="status"></p>
+
+        <section id="library-view" class="teacher-grid">
+          <article class="panel">
+            <h2>Import a game set</h2>
+            <p>Use the workbook template for six categories, five clues per category, and Final Jeopardy.</p>
+            <a class="button secondary" href="../downloads/jeopardy-import-template.xlsx" download>Download template</a>
+            <form id="import-form">
+              <label for="set-title">Game-set title</label>
+              <input id="set-title" maxlength="80" placeholder="Hardware Review" required>
+              <label for="import-file">Completed workbook</label>
+              <input id="import-file" type="file" accept=".xlsx" required>
+              <button class="button primary" type="submit">Import and save</button>
+            </form>
+          </article>
+          <article class="panel library-panel">
+            <h2>Saved game sets</h2>
+            <div id="sets-list" class="sets-list"></div>
+          </article>
+          <article class="panel session-panel">
+            <h2>Start a session</h2>
+            <label for="session-set">Question set</label>
+            <select id="session-set"></select>
+            <label for="max-teams">Maximum teams</label>
+            <input id="max-teams" type="number" min="1" max="10" value="6">
+            <button id="create-session" class="button primary" type="button">Create session</button>
+          </article>
+        </section>
+
+        <section id="host-view" hidden>
+          <div class="host-topbar">
+            <div><span class="eyebrow">Join at jeopardy.mrflorence.com</span><strong id="host-code" class="join-code"></strong></div>
+            <div class="host-actions">
+              <button id="back-library" class="button secondary" type="button">Game library</button>
+              <button id="start-game" class="button primary" type="button">Start game</button>
+              <button id="begin-final" class="button gold" type="button">Final Jeopardy</button>
+            </div>
+          </div>
+          <div class="host-layout">
+            <section>
+              <div id="host-board" class="jeopardy-board"></div>
+              <article id="host-clue" class="panel clue-panel" hidden>
+                <p id="host-category" class="eyebrow"></p>
+                <div id="host-value" class="clue-value"></div>
+                <h2 id="host-question"></h2>
+                <p id="host-answer" class="answer" hidden></p>
+                <div class="host-actions">
+                  <button id="reveal-answer" class="button gold" type="button">Reveal answer</button>
+                  <button id="return-board" class="button secondary" type="button">Return to board</button>
+                </div>
+              </article>
+              <article id="host-final" class="panel clue-panel" hidden>
+                <p class="eyebrow">Final Jeopardy</p>
+                <h2 id="final-category"></h2>
+                <p id="final-question"></p>
+                <p id="final-answer" class="answer" hidden></p>
+                <div class="host-actions">
+                  <button id="show-final-clue" class="button primary" type="button">Show final clue</button>
+                  <button id="reveal-final" class="button gold" type="button">Reveal responses</button>
+                  <button id="finish-game" class="button secondary" type="button">Finish game</button>
+                </div>
+              </article>
+            </section>
+            <aside class="panel teams-panel"><h2>Teams</h2><div id="host-teams"></div></aside>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="../runtime-config.js"></script>
+    <script type="module" src="../js/teacher-app.js"></script>
+  </body>
+</html>
