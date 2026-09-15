@@ -24,6 +24,7 @@ let currentSession = null;
 let currentSet = null;
 let teams = [];
 let pollTimer;
+const HOST_SESSION_KEY = "jeopardy-host-session";
 const money = (value) => `${value < 0 ? "-$" : "$"}${Math.abs(Number(value)).toLocaleString()}`;
 const message = (text, success = false) => {
   elements.dashboardMessage.textContent = text;
@@ -115,10 +116,11 @@ function renderTeams() {
         element("div", `Response: ${team.final_answer || "No response"}`),
       );
       const finalControls = element("div", undefined, "score-controls");
-      const wrong = element("button", team.final_scored ? "Scored" : "Incorrect", "button secondary");
+      const finalLocked = team.final_scored || currentSession?.state === "finished";
+      const wrong = element("button", team.final_scored ? "Scored" : currentSession?.state === "finished" ? "Game finished" : "Incorrect", "button secondary");
       const right = element("button", "Correct", "button gold");
-      wrong.disabled = team.final_scored;
-      right.disabled = team.final_scored;
+      wrong.disabled = finalLocked;
+      right.disabled = finalLocked;
       wrong.addEventListener("click", () => scoreFinal(team, false));
       right.addEventListener("click", () => scoreFinal(team, true));
       finalControls.append(wrong, right); response.append(finalControls); card.append(response);
@@ -153,7 +155,7 @@ function renderHost() {
   if (!currentSession || !currentSet) return;
   elements.hostCode.textContent = currentSession.join_code;
   elements.startGame.hidden = currentSession.state !== "lobby";
-  elements.beginFinal.hidden = ["final_wager", "final_clue", "final_answer", "finished"].includes(currentSession.state);
+  elements.beginFinal.hidden = currentSession.state === "lobby" || ["final_wager", "final_clue", "final_answer", "finished"].includes(currentSession.state);
   elements.board.hidden = currentSession.state !== "board" && currentSession.state !== "lobby";
   elements.clue.hidden = !["clue", "answer"].includes(currentSession.state);
   elements.final.hidden = !["final_wager", "final_clue", "final_answer", "finished"].includes(currentSession.state);
@@ -191,6 +193,7 @@ async function pollHost() {
 async function showHost(session) {
   currentSession = session;
   currentSet = gameSets.find((set) => set.id === session.set_id) ?? null;
+  localStorage.setItem(HOST_SESSION_KEY, session.id);
   elements.library.hidden = true; elements.host.hidden = false;
   await pollHost();
   clearInterval(pollTimer); pollTimer = setInterval(pollHost, 1500);
@@ -225,8 +228,18 @@ elements.returnBoard.addEventListener("click", async () => { currentSession = aw
 elements.beginFinal.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "final_wager", active_clue: null }); renderHost(); });
 elements.showFinalClue.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "final_clue" }); renderHost(); });
 elements.revealFinal.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "final_answer" }); await pollHost(); });
-elements.finishGame.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "finished" }); await pollHost(); });
-elements.backLibrary.addEventListener("click", () => { clearInterval(pollTimer); currentSession = null; elements.host.hidden = true; elements.library.hidden = false; });
+elements.finishGame.addEventListener("click", async () => {
+  currentSession = await service.updateSession(currentSession.id, { state: "finished" });
+  localStorage.removeItem(HOST_SESSION_KEY);
+  await pollHost();
+});
+elements.backLibrary.addEventListener("click", () => {
+  clearInterval(pollTimer);
+  localStorage.removeItem(HOST_SESSION_KEY);
+  currentSession = null;
+  elements.host.hidden = true;
+  elements.library.hidden = false;
+});
 elements.signIn.addEventListener("click", async () => { try { await service.signIn(); } catch (error) { elements.authMessage.textContent = error.message; } });
 elements.signOut.addEventListener("click", async () => { await service.signOut(); location.reload(); });
 
@@ -238,6 +251,16 @@ async function initialize() {
     if (!(await service.isTeacher())) { elements.authMessage.textContent = "This Google account is not approved for teacher access."; return; }
     elements.auth.hidden = true; elements.dashboard.hidden = false;
     await loadSets();
+    const savedSessionId = localStorage.getItem(HOST_SESSION_KEY);
+    if (savedSessionId) {
+      try {
+        const savedSession = await service.getGameSession(savedSessionId);
+        if (savedSession.state !== "finished") await showHost(savedSession);
+        else localStorage.removeItem(HOST_SESSION_KEY);
+      } catch {
+        localStorage.removeItem(HOST_SESSION_KEY);
+      }
+    }
   } catch (error) { elements.authMessage.textContent = error.message; }
 }
 window.addEventListener("beforeunload", () => clearInterval(pollTimer));

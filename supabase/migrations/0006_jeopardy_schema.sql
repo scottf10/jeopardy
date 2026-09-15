@@ -127,7 +127,7 @@ declare
   new_team public.jeopardy_teams%rowtype;
   clean_name text := btrim(p_team_name);
 begin
-  select * into selected from public.jeopardy_sessions where join_code = upper(btrim(p_code));
+  select * into selected from public.jeopardy_sessions where join_code = upper(btrim(p_code)) for update;
   if not found then raise exception 'Game code not found'; end if;
   if selected.state <> 'lobby' then raise exception 'This game has already started'; end if;
   if char_length(clean_name) not between 1 and 24 then raise exception 'Team name must be 1–24 characters'; end if;

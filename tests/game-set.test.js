@@ -27,6 +27,7 @@ test("rejects incomplete boards and missing final questions", () => {
 test("database contract protects games and limits classroom sessions", () => {
   const sql = fs.readFileSync(new URL("../supabase/migrations/0006_jeopardy_schema.sql", import.meta.url), "utf8");
   assert.match(sql, /max_teams between 1 and 10/);
+  assert.match(sql, /where join_code = upper\(btrim\(p_code\)\) for update/);
   assert.match(sql, /enable row level security/g);
   assert.match(sql, /revoke all on public\.jeopardy_sets, public\.jeopardy_sessions, public\.jeopardy_teams from anon/);
   assert.match(sql, /team_token uuid not null/);
