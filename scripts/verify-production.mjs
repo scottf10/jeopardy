@@ -186,6 +186,11 @@ try {
   assert.equal(scored[0].final_scored, true);
   assert.equal(scored[0].score, -100);
 
+  dbQuery(`update public.jeopardy_sessions set state = 'finished' where id = ${sqlLiteral(sessionId)}::uuid returning id::text;`);
+  const finished = await request(config, "rpc/jeopardy_team_state", { p_code: code, p_token: teams[0].token });
+  assert.equal(finished.response.status, 200);
+  assert.equal(finished.payload.state, "finished");
+
   console.log(JSON.stringify({
     siteOrigin,
     teacherAccess: true,
@@ -195,6 +200,7 @@ try {
     firstBuzzWon: true,
     incorrectReopenedBuzzing: true,
     finalJeopardyCompleted: true,
+    finishedStateReachedTeams: true,
   }));
 } finally {
   if (sessionId) dbQuery(`delete from public.jeopardy_sessions where id = ${sqlLiteral(sessionId)}::uuid; select true as cleaned;`);

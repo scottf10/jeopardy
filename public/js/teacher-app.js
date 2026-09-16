@@ -1,6 +1,6 @@
 import { getRuntimeConfig } from "./config.js";
 import { buzzSecondsRemaining } from "./buzzer.js";
-import { clueKey, normalizeImportedGame } from "./game-set.js";
+import { clueKey, extractWorksheetRows, normalizeImportedGame } from "./game-set.js";
 import { createTeacherService } from "./teacher-service.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -8,6 +8,7 @@ const elements = {
   auth: $("#auth-view"), dashboard: $("#dashboard-view"), authMessage: $("#auth-message"),
   dashboardMessage: $("#dashboard-message"), signIn: $("#sign-in"), signOut: $("#sign-out"),
   library: $("#library-view"), host: $("#host-view"), importForm: $("#import-form"),
+  importButton: $("#import-form button[type='submit']"),
   setTitle: $("#set-title"), importFile: $("#import-file"), setsList: $("#sets-list"),
   sessionSet: $("#session-set"), maxTeams: $("#max-teams"), createSession: $("#create-session"),
   hostCode: $("#host-code"), backLibrary: $("#back-library"), startGame: $("#start-game"),
@@ -29,6 +30,13 @@ let teams = [];
 let pollTimer;
 let countdownTimer;
 let endingSession = false;
+let hostPollInFlight = false;
+let hostRevision = 0;
+let lastHostState = "";
+let importPending = false;
+let sessionCreatePending = false;
+let clueOpening = false;
+let sessionPatchPending = false;
 const HOST_SESSION_KEY = "jeopardy-host-session";
 const money = (value) => `${value < 0 ? "-$" : "$"}${Math.abs(Number(value)).toLocaleString()}`;
 const message = (text, success = false) => {
@@ -49,8 +57,14 @@ async function parseWorkbook(file, title) {
   const questionsSheet = workbook.Sheets.Questions;
   const finalSheet = workbook.Sheets["Final Jeopardy"];
   if (!questionsSheet || !finalSheet) throw new Error("Use the Questions and Final Jeopardy sheets in the template.");
-  const questions = XLSX.utils.sheet_to_json(questionsSheet, { defval: "" });
-  const finalRows = XLSX.utils.sheet_to_json(finalSheet, { defval: "" });
+  const questions = extractWorksheetRows(
+    XLSX.utils.sheet_to_json(questionsSheet, { header: 1, defval: "", blankrows: false }),
+    { includeValue: true, sheetName: "Questions" },
+  );
+  const finalRows = extractWorksheetRows(
+    XLSX.utils.sheet_to_json(finalSheet, { header: 1, defval: "", blankrows: false }),
+    { sheetName: "Final Jeopardy" },
+  );
   return normalizeImportedGame(title, questions, finalRows[0]);
 }
 
@@ -65,8 +79,10 @@ function renderSets() {
     remove.type = "button";
     remove.addEventListener("click", async () => {
       if (!confirm(`Delete “${set.title}”? This also removes its previous sessions and team scores.`)) return;
+      remove.disabled = true;
       try { await service.deleteSet(set.id); await loadSets(); message("Game set deleted.", true); }
       catch (error) { message(error.message); }
+      finally { remove.disabled = false; }
     });
     card.append(text, remove);
     elements.setsList.append(card);
@@ -190,22 +206,45 @@ async function scoreFinal(team, correct) {
 
 async function resolveBuzz(teamId, correct) {
   try {
+    hostRevision += 1;
     await service.resolveBuzz(currentSession.id, teamId, correct);
+    lastHostState = "";
     await pollHost();
   } catch (error) { message(error.message); }
 }
 
+async function updateGameSession(patch) {
+  hostRevision += 1;
+  currentSession = await service.updateSession(currentSession.id, patch);
+  return currentSession;
+}
+
+async function applySessionPatch(patch) {
+  if (sessionPatchPending) return;
+  sessionPatchPending = true;
+  try {
+    await updateGameSession(patch);
+    renderHost();
+  } catch (error) { message(error.message); }
+  finally { sessionPatchPending = false; }
+}
+
 async function openClue(category, clue, categoryIndex, clueIndex) {
+  if (clueOpening) return;
+  clueOpening = true;
   const key = clueKey(categoryIndex, clueIndex);
   const used = [...new Set([...(currentSession.used_clues ?? []), key])];
   const board = structuredClone(currentSession.board_state);
   board.categories[categoryIndex].clues[clueIndex].used = true;
-  currentSession = await service.updateSession(currentSession.id, {
-    state: "clue", active_clue: { ...clue, categoryName: category.name, categoryIndex, clueIndex },
-    show_answer: false, used_clues: used, board_state: board,
-    buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [],
-  });
-  renderHost();
+  try {
+    await updateGameSession({
+      state: "clue", active_clue: { ...clue, categoryName: category.name, categoryIndex, clueIndex },
+      show_answer: false, used_clues: used, board_state: board,
+      buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [],
+    });
+    renderHost();
+  } catch (error) { message(error.message); }
+  finally { clueOpening = false; }
 }
 
 function renderHost() {
@@ -237,21 +276,31 @@ function renderHost() {
     elements.revealFinal.hidden = currentSession.state !== "final_clue";
     elements.finishGame.hidden = currentSession.state !== "final_answer";
   }
+  lastHostState = JSON.stringify([currentSession, teams]);
 }
 
 async function pollHost() {
-  if (!currentSession) return;
+  if (!currentSession || hostPollInFlight) return;
+  hostPollInFlight = true;
+  const sessionId = currentSession.id;
+  const revision = hostRevision;
   try {
-    [currentSession, teams] = await Promise.all([
-      service.getGameSession(currentSession.id), service.listTeams(currentSession.id),
+    const [nextSession, nextTeams] = await Promise.all([
+      service.getGameSession(sessionId), service.listTeams(sessionId),
     ]);
-    renderHost();
+    if (revision !== hostRevision || currentSession?.id !== sessionId) return;
+    currentSession = nextSession;
+    teams = nextTeams;
+    const serialized = JSON.stringify([currentSession, teams]);
+    if (serialized !== lastHostState) renderHost();
   } catch (error) { message(error.message); }
+  finally { hostPollInFlight = false; }
 }
 
 async function showHost(session) {
   currentSession = session;
   currentSet = gameSets.find((set) => set.id === session.set_id) ?? null;
+  lastHostState = "";
   localStorage.setItem(HOST_SESSION_KEY, session.id);
   elements.library.hidden = true; elements.host.hidden = false;
   await pollHost();
@@ -266,7 +315,7 @@ async function endCurrentSession() {
   if (!hasActiveSession() || endingSession) return;
   endingSession = true;
   try {
-    currentSession = await service.updateSession(currentSession.id, {
+    await updateGameSession({
       state: "finished",
       buzz_team_id: null,
       buzz_started_at: null,
@@ -279,42 +328,50 @@ async function endCurrentSession() {
 
 elements.importForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (importPending) return;
   const file = elements.importFile.files[0];
   if (!file) return message("Choose a completed workbook.");
+  importPending = true;
+  elements.importButton.disabled = true;
   try {
     message("Checking workbook…");
     const game = await parseWorkbook(file, elements.setTitle.value);
     await service.saveSet(game); elements.importForm.reset(); await loadSets();
     message(`Saved “${game.title}”.`, true);
   } catch (error) { message(error.message); }
+  finally { importPending = false; elements.importButton.disabled = false; }
 });
 
 elements.createSession.addEventListener("click", async () => {
+  if (sessionCreatePending) return;
   const setId = elements.sessionSet.value;
   const maxTeams = Number(elements.maxTeams.value);
   if (!setId || !Number.isInteger(maxTeams) || maxTeams < 1 || maxTeams > 10) return message("Choose a game set and 1–10 teams.");
+  sessionCreatePending = true;
+  elements.createSession.disabled = true;
   try {
     const created = await service.createSession(setId, maxTeams);
     const session = await service.getGameSession(created.id);
     await showHost(session);
   } catch (error) { message(error.message); }
+  finally { sessionCreatePending = false; elements.createSession.disabled = gameSets.length === 0; }
 });
 
-elements.startGame.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "board" }); renderHost(); });
-elements.revealAnswer.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "answer", show_answer: true, buzz_team_id: null, buzz_started_at: null }); renderHost(); });
-elements.returnBoard.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "board", active_clue: null, show_answer: false, buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [] }); renderHost(); });
-elements.beginFinal.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "final_wager", active_clue: null, buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [] }); renderHost(); });
+elements.startGame.addEventListener("click", () => applySessionPatch({ state: "board" }));
+elements.revealAnswer.addEventListener("click", () => applySessionPatch({ state: "answer", show_answer: true, buzz_team_id: null, buzz_started_at: null }));
+elements.returnBoard.addEventListener("click", () => applySessionPatch({ state: "board", active_clue: null, show_answer: false, buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [] }));
+elements.beginFinal.addEventListener("click", () => applySessionPatch({ state: "final_wager", active_clue: null, buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [] }));
 elements.saveBuzzSeconds.addEventListener("click", async () => {
   const seconds = Number(elements.buzzSeconds.value);
   if (!Number.isInteger(seconds) || seconds < 3 || seconds > 60) return message("Answer time must be between 3 and 60 seconds.");
   try {
-    currentSession = await service.updateSession(currentSession.id, { buzz_duration_seconds: seconds });
+    await updateGameSession({ buzz_duration_seconds: seconds });
     message(`Answer timer updated to ${seconds} seconds.`, true);
     renderHost();
   } catch (error) { message(error.message); }
 });
-elements.showFinalClue.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "final_clue" }); renderHost(); });
-elements.revealFinal.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "final_answer" }); await pollHost(); });
+elements.showFinalClue.addEventListener("click", () => applySessionPatch({ state: "final_clue" }));
+elements.revealFinal.addEventListener("click", () => applySessionPatch({ state: "final_answer" }));
 elements.finishGame.addEventListener("click", async () => {
   if (!confirm("Finish this game? Every team will be disconnected and returned to the join screen.")) return;
   try {

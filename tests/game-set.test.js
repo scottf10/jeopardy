@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { normalizeImportedGame } from "../public/js/game-set.js";
+import { extractWorksheetRows, normalizeImportedGame } from "../public/js/game-set.js";
 
 function rows() {
   return Array.from({ length: 6 }, (_, category) =>
@@ -22,6 +22,31 @@ test("normalizes a complete six-category board and Final Jeopardy", () => {
 test("rejects incomplete boards and missing final questions", () => {
   assert.throws(() => normalizeImportedGame("Review", rows().slice(1), { Category: "F", Clue: "Q", Answer: "A" }), /one clue for each value/);
   assert.throws(() => normalizeImportedGame("Review", rows(), {}), /Final Jeopardy/);
+});
+
+test("finds import headings even when the workbook has title rows", () => {
+  const questions = extractWorksheetRows([
+    ["Jeopardy questions"],
+    ["Six categories × five clues"],
+    [],
+    ["Category", "Value", "Question", "Answer"],
+    ["Variables", 100, "What is x?", "10"],
+  ], { includeValue: true, sheetName: "Questions" });
+  const final = extractWorksheetRows([
+    ["Final Jeopardy"],
+    [],
+    ["Category", "Clue", "Answer"],
+    ["Variables", "Final clue", "Final answer"],
+  ], { sheetName: "Final Jeopardy" });
+  assert.deepEqual(questions, [{ Category: "Variables", Value: 100, Clue: "What is x?", Answer: "10", _rowNumber: 5 }]);
+  assert.deepEqual(final, [{ Category: "Variables", Clue: "Final clue", Answer: "Final answer", _rowNumber: 4 }]);
+});
+
+test("category names are matched without case or surrounding-space differences", () => {
+  const mixedRows = rows();
+  mixedRows[1].Category = " category 1 ";
+  const game = normalizeImportedGame("Review", mixedRows, { Category: "F", Clue: "Q", Answer: "A" });
+  assert.equal(game.board.categories.length, 6);
 });
 
 test("database contract protects games and limits classroom sessions", () => {

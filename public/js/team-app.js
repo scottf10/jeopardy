@@ -5,6 +5,7 @@ import { createTeamService } from "./team-service.js";
 const elements = {
   joinView: document.querySelector("#join-view"), gameView: document.querySelector("#game-view"),
   joinForm: document.querySelector("#join-form"), code: document.querySelector("#join-code"),
+  joinButton: document.querySelector("#join-form button[type='submit']"),
   name: document.querySelector("#team-name"), message: document.querySelector("#join-message"),
   title: document.querySelector("#game-title"), myName: document.querySelector("#my-team-name"),
   myScore: document.querySelector("#my-score"), connection: document.querySelector("#connection-message"),
@@ -18,6 +19,8 @@ let countdownTimer;
 let lastState = "";
 let latestState = null;
 let buzzPending = false;
+let pollInFlight = false;
+let joinPending = false;
 const money = (value) => `${value < 0 ? "-$" : "$"}${Math.abs(Number(value)).toLocaleString()}`;
 const setMessage = (text) => { elements.message.textContent = text; };
 
@@ -72,14 +75,21 @@ function startBuzzCountdown(buzzer) {
     if (seconds === 0) clearInterval(countdownTimer);
   };
   tick();
-  countdownTimer = setInterval(tick, 200);
+  if (buzzSecondsRemaining(deadline) > 0) countdownTimer = setInterval(tick, 200);
+}
+
+function contentStateKey(state) {
+  const { teams: _teams, ...viewState } = state;
+  return JSON.stringify(
+    { ...viewState, lobbyTeamCount: state.state === "lobby" ? state.teams.length : undefined },
+    (key, value) => key === "remainingMs" ? 0 : value,
+  );
 }
 
 function renderContent(state) {
   latestState = state;
   clearInterval(countdownTimer);
   elements.title.textContent = state.title;
-  renderScoreboard(state);
   if (state.state === "lobby") {
     elements.content.innerHTML = `<div class="waiting"><p class="eyebrow">You're in</p><h2>Waiting for the teacher to start</h2><p>${state.teams.length} of ${state.maxTeams} teams joined</p></div>`;
   } else if (state.state === "board") {
@@ -146,7 +156,8 @@ async function submitAnswer(event) {
 }
 
 async function poll() {
-  if (!credentials) return;
+  if (!credentials || pollInFlight) return;
+  pollInFlight = true;
   try {
     const state = await service.state(credentials.code, credentials.token);
     if (state.state === "finished") {
@@ -155,23 +166,30 @@ async function poll() {
     }
     elements.connection.textContent = "Connected";
     latestState = state;
-    const serialized = JSON.stringify(state, (key, value) => key === "remainingMs" ? 0 : value);
+    renderScoreboard(state);
+    const serialized = contentStateKey(state);
     if (serialized !== lastState) { lastState = serialized; renderContent(state); }
   } catch (error) { elements.connection.textContent = `Reconnecting… ${error.message}`; }
+  finally { pollInFlight = false; }
 }
 
 elements.joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (joinPending) return;
   const code = elements.code.value.trim().toUpperCase();
   const name = elements.name.value.trim();
   if (!/^[A-Z0-9]{6}$/.test(code) || !name) return setMessage("Enter a six-character code and a team name.");
+  joinPending = true;
+  elements.joinButton.disabled = true;
   try {
+    setMessage("");
     const joined = await service.join(code, name);
     credentials = { code, token: joined.token };
     sessionStorage.setItem("jeopardy-team", JSON.stringify(credentials));
     elements.joinView.hidden = true; elements.gameView.hidden = false;
     await poll(); pollTimer = setInterval(poll, 650);
   } catch (error) { setMessage(error.message); }
+  finally { joinPending = false; elements.joinButton.disabled = false; }
 });
 
 async function initialize() {
@@ -187,7 +205,8 @@ async function initialize() {
           return;
         }
         elements.connection.textContent = "Connected";
-        lastState = JSON.stringify(state);
+        renderScoreboard(state);
+        lastState = contentStateKey(state);
         renderContent(state);
         pollTimer = setInterval(poll, 650);
       } catch {
@@ -202,9 +221,9 @@ async function initialize() {
 }
 window.addEventListener("keydown", (event) => {
   if (event.code !== "Space" || event.repeat || isTypingTarget(event.target)) return;
-  if (latestState?.state !== "clue" || !latestState?.buzzer?.canBuzz) return;
+  if (latestState?.state !== "clue") return;
   event.preventDefault();
-  buzz();
+  if (latestState?.buzzer?.canBuzz) buzz();
 });
 window.addEventListener("beforeunload", () => { clearInterval(pollTimer); clearInterval(countdownTimer); });
 initialize();

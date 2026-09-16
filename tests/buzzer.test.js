@@ -35,8 +35,13 @@ test("teacher and team clients expose timer and Space-key controls", () => {
   assert.match(teacherApp, /window\.addEventListener\("pagehide"/);
   assert.match(teacherService, /keepalive: true/);
   assert.match(teacherService, /endSessionOnUnload/);
+  assert.match(teacherApp, /hostPollInFlight/);
+  assert.match(teacherApp, /sessionCreatePending/);
   assert.match(teamApp, /event\.code !== "Space"/);
   assert.match(teamApp, /Press SPACE to buzz/);
   assert.match(teamApp, /function leaveFinishedGame/);
   assert.match(teamApp, /sessionStorage\.removeItem\("jeopardy-team"\)/);
+  assert.match(teamApp, /pollInFlight/);
+  assert.match(teamApp, /joinPending/);
+  assert.match(teamApp, /function contentStateKey/);
 });
