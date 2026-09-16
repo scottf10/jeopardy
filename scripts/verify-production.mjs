@@ -132,9 +132,31 @@ try {
   `);
   const firstBuzz = await request(config, "rpc/jeopardy_buzz", { p_code: code, p_token: teams[0].token });
   assert.equal(firstBuzz.response.status, 200, "first eligible team must win the buzz");
+  dbQuery(`
+    with claims as (
+      select set_config('request.jwt.claim.sub', ${sqlLiteral(teacherId)}, true),
+             set_config('request.jwt.claims', ${sqlLiteral(claims)}, true)
+    )
+    select public.jeopardy_set_buzz_paused(${sqlLiteral(sessionId)}::uuid, true)
+    from claims;
+  `);
+  const pausedState = await request(config, "rpc/jeopardy_team_state", { p_code: code, p_token: teams[1].token });
+  assert.equal(pausedState.response.status, 200);
+  assert.equal(pausedState.payload.buzzer.paused, true);
+  assert.equal(pausedState.payload.buzzer.teamId, teams[0].teamId);
+  assert.ok(pausedState.payload.buzzer.remainingMs > 0);
   const blockedBuzz = await request(config, "rpc/jeopardy_buzz", { p_code: code, p_token: teams[1].token });
-  assert.notEqual(blockedBuzz.response.status, 200, "a second team cannot replace an active buzzer");
+  assert.notEqual(blockedBuzz.response.status, 200, "a second team cannot replace a paused active buzzer");
+  dbQuery(`
+    with claims as (
+      select set_config('request.jwt.claim.sub', ${sqlLiteral(teacherId)}, true),
+             set_config('request.jwt.claims', ${sqlLiteral(claims)}, true)
+    )
+    select public.jeopardy_set_buzz_paused(${sqlLiteral(sessionId)}::uuid, false)
+    from claims;
+  `);
   const buzzState = await request(config, "rpc/jeopardy_team_state", { p_code: code, p_token: teams[1].token });
+  assert.equal(buzzState.payload.buzzer.paused, false);
   assert.equal(buzzState.payload.buzzer.teamId, teams[0].teamId);
   assert.equal(buzzState.payload.buzzer.teamName, "Verification Team 1");
   assert.ok(buzzState.payload.buzzer.remainingMs > 0);
@@ -213,6 +235,8 @@ try {
     fiveTeamsJoined: true,
     sixthTeamRejected: true,
     firstBuzzWon: true,
+    buzzerPausePreservedFirstTeam: true,
+    buzzerResumeWorked: true,
     incorrectReopenedBuzzing: true,
     finalJeopardyCompleted: true,
     combinedFinalSubmissionLocked: true,

@@ -125,6 +125,15 @@ export async function createTeacherService(config) {
         "Buzzed answer could not be scored",
       );
     },
+    async setBuzzPaused(sessionId, paused) {
+      return fail(
+        await client.rpc("jeopardy_set_buzz_paused", {
+          p_session_id: sessionId,
+          p_paused: paused,
+        }),
+        "Buzzer timer could not be updated",
+      );
+    },
     async scoreFinal(teamId, correct) {
       return fail(
         await client.rpc("jeopardy_score_final", { p_team_id: teamId, p_correct: correct }),

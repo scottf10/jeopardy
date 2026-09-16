@@ -37,6 +37,7 @@ let importPending = false;
 let sessionCreatePending = false;
 let clueOpening = false;
 let sessionPatchPending = false;
+let buzzPausePending = false;
 const HOST_SESSION_KEY = "jeopardy-host-session";
 const money = (value) => `${value < 0 ? "-$" : "$"}${Math.abs(Number(value)).toLocaleString()}`;
 const message = (text, success = false) => {
@@ -190,19 +191,24 @@ function renderHostBuzzer() {
   const title = element("p", "First buzz", "eyebrow");
   const name = element("h3", buzzedTeam.name);
   const countdown = element("div", "", "buzz-countdown");
-  const note = element("p", "Answering now");
+  const paused = currentSession.buzz_paused_remaining_ms != null;
+  const note = element("p", paused ? "Timer paused — this team still owns the buzzer." : "Answering now");
   const actions = element("div", undefined, "buzzer-actions");
+  const pause = element("button", paused ? "Resume timer" : "Pause timer", "button primary");
   const wrong = element("button", `Incorrect (−${money(currentSession.active_clue?.value ?? 0)})`, "button secondary");
   const correct = element("button", `Correct (+${money(currentSession.active_clue?.value ?? 0)})`, "button gold");
+  pause.type = "button";
   wrong.type = "button";
   correct.type = "button";
+  pause.addEventListener("click", () => toggleBuzzPause(!paused));
   wrong.addEventListener("click", () => resolveBuzz(buzzedTeam.id, false));
   correct.addEventListener("click", () => resolveBuzz(buzzedTeam.id, true));
-  actions.append(wrong, correct);
+  actions.append(pause, wrong, correct);
   elements.buzzerStatus.append(title, name, countdown, note, actions);
 
-  const deadline = Date.parse(currentSession.buzz_started_at)
-    + Number(currentSession.buzz_duration_seconds ?? 10) * 1000;
+  const deadline = paused
+    ? Date.now() + Number(currentSession.buzz_paused_remaining_ms)
+    : Date.parse(currentSession.buzz_started_at) + Number(currentSession.buzz_duration_seconds ?? 10) * 1000;
   const tick = () => {
     const seconds = buzzSecondsRemaining(deadline);
     countdown.textContent = String(seconds);
@@ -212,7 +218,7 @@ function renderHostBuzzer() {
     }
   };
   tick();
-  if (buzzSecondsRemaining(deadline) > 0) countdownTimer = setInterval(tick, 200);
+  if (!paused && buzzSecondsRemaining(deadline) > 0) countdownTimer = setInterval(tick, 200);
 }
 
 async function changeScore(team, amount) {
@@ -243,6 +249,18 @@ async function resolveBuzz(teamId, correct) {
   } catch (error) { message(error.message); }
 }
 
+async function toggleBuzzPause(paused) {
+  if (buzzPausePending) return;
+  buzzPausePending = true;
+  try {
+    hostRevision += 1;
+    await service.setBuzzPaused(currentSession.id, paused);
+    lastHostState = "";
+    await pollHost();
+  } catch (error) { message(error.message); }
+  finally { buzzPausePending = false; }
+}
+
 async function updateGameSession(patch) {
   hostRevision += 1;
   currentSession = await service.updateSession(currentSession.id, patch);
@@ -270,7 +288,7 @@ async function openClue(category, clue, categoryIndex, clueIndex) {
     await updateGameSession({
       state: "clue", active_clue: { ...clue, categoryName: category.name, categoryIndex, clueIndex },
       show_answer: false, used_clues: used, board_state: board,
-      buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [],
+      buzz_team_id: null, buzz_started_at: null, buzz_paused_remaining_ms: null, buzzed_team_ids: [],
     });
     renderHost();
   } catch (error) { message(error.message); }
@@ -398,9 +416,9 @@ elements.createSession.addEventListener("click", async () => {
 });
 
 elements.startGame.addEventListener("click", () => applySessionPatch({ state: "board" }));
-elements.revealAnswer.addEventListener("click", () => applySessionPatch({ state: "answer", show_answer: true, buzz_team_id: null, buzz_started_at: null }));
-elements.returnBoard.addEventListener("click", () => applySessionPatch({ state: "board", active_clue: null, show_answer: false, buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [] }));
-elements.beginFinal.addEventListener("click", () => applySessionPatch({ state: "final_clue", active_clue: null, buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [] }));
+elements.revealAnswer.addEventListener("click", () => applySessionPatch({ state: "answer", show_answer: true, buzz_team_id: null, buzz_started_at: null, buzz_paused_remaining_ms: null }));
+elements.returnBoard.addEventListener("click", () => applySessionPatch({ state: "board", active_clue: null, show_answer: false, buzz_team_id: null, buzz_started_at: null, buzz_paused_remaining_ms: null, buzzed_team_ids: [] }));
+elements.beginFinal.addEventListener("click", () => applySessionPatch({ state: "final_clue", active_clue: null, buzz_team_id: null, buzz_started_at: null, buzz_paused_remaining_ms: null, buzzed_team_ids: [] }));
 elements.saveBuzzSeconds.addEventListener("click", async () => {
   const seconds = Number(elements.buzzSeconds.value);
   if (!Number.isInteger(seconds) || seconds < 3 || seconds > 60) return message("Answer time must be between 3 and 60 seconds.");

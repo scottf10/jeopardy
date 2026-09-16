@@ -76,8 +76,8 @@ input:focus, select:focus { outline: 3px solid rgb(248 198 76 / 55%); border-col
 .buzzer-status { min-height: 5.5rem; display: grid; margin-top: .8rem; place-items: center; }
 .buzzer-status h3 { margin: .15rem 0; color: var(--gold); font-size: clamp(1.5rem, 4vw, 2.5rem); }
 .buzzer-status p { margin: .2rem 0; }
-.buzzer-actions { display: flex; width: min(100%, 28rem); margin-top: .65rem; gap: .55rem; }
-.buzzer-actions .button { flex: 1; }
+.buzzer-actions { display: flex; width: min(100%, 42rem); margin-top: .65rem; gap: .55rem; flex-wrap: wrap; }
+.buzzer-actions .button { min-width: 9rem; flex: 1; }
 .buzz-countdown { min-width: 4.5rem; color: var(--gold); font-size: clamp(2.5rem, 8vw, 5rem); font-weight: 950; font-variant-numeric: tabular-nums; line-height: 1; }
 .student-buzzer { width: min(100%, 40rem); margin: 1.25rem auto 0; padding: 1rem; background: rgb(0 0 0 / 25%); border: 2px solid rgb(248 198 76 / 32%); border-radius: 1rem; }
 .student-buzzer h3 { margin: .2rem 0 .45rem; color: var(--gold); font-size: clamp(1.5rem, 5vw, 2.8rem); }

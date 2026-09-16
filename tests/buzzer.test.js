@@ -65,3 +65,18 @@ test("Final Jeopardy submission is combined, validated, and locked atomically", 
   assert.match(sql, /final_wager = p_wager,[\s\S]*final_answer = clean_answer,[\s\S]*final_submitted = true/);
   assert.match(sql, /grant execute on function public\.jeopardy_submit_final\(text, uuid, integer, text\) to anon, authenticated/);
 });
+
+test("teacher can pause an active buzzer without opening it to other teams", () => {
+  const sql = fs.readFileSync(new URL("../supabase/migrations/0011_pause_buzzer.sql", import.meta.url), "utf8");
+  const teacherApp = fs.readFileSync(new URL("../public/js/teacher-app.js", import.meta.url), "utf8");
+  const teamApp = fs.readFileSync(new URL("../public/js/team-app.js", import.meta.url), "utf8");
+  assert.match(sql, /buzz_paused_remaining_ms/);
+  assert.match(sql, /jeopardy_set_buzz_paused/);
+  assert.match(sql, /selected\.buzz_paused_remaining_ms is not null[\s\S]*Another team buzzed first/);
+  assert.match(sql, /'paused', active_buzz and selected\.buzz_paused_remaining_ms is not null/);
+  assert.match(sql, /grant execute on function public\.jeopardy_set_buzz_paused\(uuid, boolean\) to authenticated/);
+  assert.match(teacherApp, /Pause timer/);
+  assert.match(teacherApp, /Resume timer/);
+  assert.match(teacherApp, /service\.setBuzzPaused/);
+  assert.match(teamApp, /Timer paused — this team still has the floor/);
+});

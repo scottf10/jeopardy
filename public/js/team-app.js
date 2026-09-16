@@ -55,7 +55,10 @@ function buzzerMarkup(state) {
   const buzzer = state.buzzer ?? {};
   if (buzzer.teamId) {
     const mine = buzzer.teamId === state.myTeam.id;
-    return `<section class="student-buzzer"><p class="eyebrow">${mine ? "Your team buzzed first" : "First buzz"}</p><h3>${escapeText(buzzer.teamName)}</h3><div id="buzz-countdown" class="buzz-countdown" aria-label="Seconds remaining"></div><p>${mine ? "Give your answer to the teacher." : "Waiting for their answer…"}</p></section>`;
+    const status = buzzer.paused
+      ? "Timer paused — this team still has the floor."
+      : mine ? "Give your answer to the teacher." : "Waiting for their answer…";
+    return `<section class="student-buzzer"><p class="eyebrow">${mine ? "Your team buzzed first" : "First buzz"}</p><h3>${escapeText(buzzer.teamName)}</h3><div id="buzz-countdown" class="buzz-countdown" aria-label="Seconds remaining"></div><p>${status}</p></section>`;
   }
   if (buzzer.canBuzz) {
     return `<section class="student-buzzer"><p class="eyebrow">Buzzer open</p><button id="buzz-button" class="buzz-button" type="button">Press SPACE to buzz</button></section>`;
@@ -77,7 +80,7 @@ function startBuzzCountdown(buzzer) {
     if (seconds === 0) clearInterval(countdownTimer);
   };
   tick();
-  if (buzzSecondsRemaining(deadline) > 0) countdownTimer = setInterval(tick, 200);
+  if (!buzzer.paused && buzzSecondsRemaining(deadline) > 0) countdownTimer = setInterval(tick, 200);
 }
 
 function contentStateKey(state) {
