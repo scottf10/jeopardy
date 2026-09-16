@@ -1,4 +1,5 @@
 import { getRuntimeConfig } from "./config.js";
+import { buzzSecondsRemaining, createBuzzDeadline, isTypingTarget } from "./buzzer.js";
 import { createTeamService } from "./team-service.js";
 
 const elements = {
@@ -13,7 +14,10 @@ const elements = {
 let service;
 let credentials;
 let pollTimer;
+let countdownTimer;
 let lastState = "";
+let latestState = null;
+let buzzPending = false;
 const money = (value) => `${value < 0 ? "-$" : "$"}${Math.abs(Number(value)).toLocaleString()}`;
 const setMessage = (text) => { elements.message.textContent = text; };
 
@@ -42,7 +46,38 @@ function renderBoard(board) {
   }).join("")).join("")}</div>`;
 }
 
+function buzzerMarkup(state) {
+  const buzzer = state.buzzer ?? {};
+  if (buzzer.teamId) {
+    const mine = buzzer.teamId === state.myTeam.id;
+    return `<section class="student-buzzer"><p class="eyebrow">${mine ? "Your team buzzed first" : "First buzz"}</p><h3>${escapeText(buzzer.teamName)}</h3><div id="buzz-countdown" class="buzz-countdown" aria-label="Seconds remaining"></div><p>${mine ? "Give your answer to the teacher." : "Waiting for their answer…"}</p></section>`;
+  }
+  if (buzzer.canBuzz) {
+    return `<section class="student-buzzer"><p class="eyebrow">Buzzer open</p><button id="buzz-button" class="buzz-button" type="button">Press SPACE to buzz</button></section>`;
+  }
+  if (buzzer.open) {
+    return `<section class="student-buzzer"><p class="eyebrow">Buzzer open</p><h3>Your team has already answered</h3><p>Waiting for another team to buzz.</p></section>`;
+  }
+  return `<section class="student-buzzer"><p>Buzzing is closed.</p></section>`;
+}
+
+function startBuzzCountdown(buzzer) {
+  clearInterval(countdownTimer);
+  const countdown = document.querySelector("#buzz-countdown");
+  if (!countdown || !buzzer?.teamId) return;
+  const deadline = createBuzzDeadline(buzzer.remainingMs);
+  const tick = () => {
+    const seconds = buzzSecondsRemaining(deadline);
+    countdown.textContent = String(seconds);
+    if (seconds === 0) clearInterval(countdownTimer);
+  };
+  tick();
+  countdownTimer = setInterval(tick, 200);
+}
+
 function renderContent(state) {
+  latestState = state;
+  clearInterval(countdownTimer);
   elements.title.textContent = state.title;
   renderScoreboard(state);
   if (state.state === "lobby") {
@@ -51,7 +86,9 @@ function renderContent(state) {
     elements.content.innerHTML = renderBoard(state.board);
   } else if (state.state === "clue" || state.state === "answer") {
     const active = state.active ?? {};
-    elements.content.innerHTML = `<div class="active-clue"><p class="eyebrow">${escapeText(active.categoryName)}</p><div class="clue-value">${money(active.value)}</div><h2>${escapeText(active.clue)}</h2>${active.answer ? `<p class="answer">${escapeText(active.answer)}</p>` : ""}</div>`;
+    elements.content.innerHTML = `<div class="active-clue"><p class="eyebrow">${escapeText(active.categoryName)}</p><div class="clue-value">${money(active.value)}</div><h2>${escapeText(active.clue)}</h2>${state.state === "clue" ? buzzerMarkup(state) : ""}${active.answer ? `<p class="answer">${escapeText(active.answer)}</p>` : ""}</div>`;
+    document.querySelector("#buzz-button")?.addEventListener("click", buzz);
+    startBuzzCountdown(state.buzzer);
   } else if (state.state === "final_wager") {
     const max = Math.max(0, Number(state.myTeam.score));
     elements.content.innerHTML = `<form id="wager-form" class="final-form"><p class="eyebrow">Final Jeopardy</p><h2>${escapeText(state.final.category)}</h2><label for="wager">Wager (maximum ${money(max)})</label><input id="wager" type="number" min="0" max="${max}" value="${state.myTeam.finalWager ?? 0}" required><button class="button gold" type="submit">Lock wager</button><p>${state.myTeam.finalWager !== null ? "Wager submitted. You may change it until the clue appears." : ""}</p></form>`;
@@ -64,6 +101,21 @@ function renderContent(state) {
   } else {
     const winner = [...state.teams].sort((a, b) => b.score - a.score)[0];
     elements.content.innerHTML = `<div class="waiting"><p class="eyebrow">Game over</p><h2>${winner ? `${escapeText(winner.name)} wins!` : "Thanks for playing!"}</h2></div>`;
+  }
+}
+
+async function buzz() {
+  if (buzzPending || !credentials || latestState?.state !== "clue" || !latestState?.buzzer?.canBuzz) return;
+  buzzPending = true;
+  elements.connection.textContent = "Buzzing…";
+  try {
+    await service.buzz(credentials.code, credentials.token);
+    await poll();
+  } catch (error) {
+    elements.connection.textContent = error.message;
+    await poll();
+  } finally {
+    buzzPending = false;
   }
 }
 
@@ -84,7 +136,8 @@ async function poll() {
   try {
     const state = await service.state(credentials.code, credentials.token);
     elements.connection.textContent = "Connected";
-    const serialized = JSON.stringify(state);
+    latestState = state;
+    const serialized = JSON.stringify(state, (key, value) => key === "remainingMs" ? 0 : value);
     if (serialized !== lastState) { lastState = serialized; renderContent(state); }
   } catch (error) { elements.connection.textContent = `Reconnecting… ${error.message}`; }
 }
@@ -99,7 +152,7 @@ elements.joinForm.addEventListener("submit", async (event) => {
     credentials = { code, token: joined.token };
     sessionStorage.setItem("jeopardy-team", JSON.stringify(credentials));
     elements.joinView.hidden = true; elements.gameView.hidden = false;
-    await poll(); pollTimer = setInterval(poll, 1200);
+    await poll(); pollTimer = setInterval(poll, 650);
   } catch (error) { setMessage(error.message); }
 });
 
@@ -114,7 +167,7 @@ async function initialize() {
         elements.connection.textContent = "Connected";
         lastState = JSON.stringify(state);
         renderContent(state);
-        pollTimer = setInterval(poll, 1200);
+        pollTimer = setInterval(poll, 650);
       } catch {
         sessionStorage.removeItem("jeopardy-team");
         credentials = null;
@@ -125,5 +178,11 @@ async function initialize() {
     }
   } catch (error) { setMessage(error.message); }
 }
-window.addEventListener("beforeunload", () => clearInterval(pollTimer));
+window.addEventListener("keydown", (event) => {
+  if (event.code !== "Space" || event.repeat || isTypingTarget(event.target)) return;
+  if (latestState?.state !== "clue" || !latestState?.buzzer?.canBuzz) return;
+  event.preventDefault();
+  buzz();
+});
+window.addEventListener("beforeunload", () => { clearInterval(pollTimer); clearInterval(countdownTimer); });
 initialize();

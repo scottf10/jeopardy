@@ -119,6 +119,47 @@ try {
   assert.equal(firstState.payload.teams.length, 10);
   assert.equal(firstState.payload.state, "lobby");
 
+  dbQuery(`
+    update public.jeopardy_sessions
+    set state = 'clue',
+        active_clue = '{"value":100,"clue":"Verification clue","answer":"Verification answer","categoryName":"Verification"}'::jsonb,
+        show_answer = false,
+        buzz_team_id = null,
+        buzz_started_at = null,
+        buzzed_team_ids = '[]'::jsonb
+    where id = ${sqlLiteral(sessionId)}::uuid
+    returning id::text;
+  `);
+  const firstBuzz = await request(config, "rpc/jeopardy_buzz", { p_code: code, p_token: teams[0].token });
+  assert.equal(firstBuzz.response.status, 200, "first eligible team must win the buzz");
+  const blockedBuzz = await request(config, "rpc/jeopardy_buzz", { p_code: code, p_token: teams[1].token });
+  assert.notEqual(blockedBuzz.response.status, 200, "a second team cannot replace an active buzzer");
+  const buzzState = await request(config, "rpc/jeopardy_team_state", { p_code: code, p_token: teams[1].token });
+  assert.equal(buzzState.payload.buzzer.teamId, teams[0].teamId);
+  assert.equal(buzzState.payload.buzzer.teamName, "Verification Team 1");
+  assert.ok(buzzState.payload.buzzer.remainingMs > 0);
+
+  dbQuery(`
+    with claims as (
+      select set_config('request.jwt.claim.sub', ${sqlLiteral(teacherId)}, true),
+             set_config('request.jwt.claims', ${sqlLiteral(claims)}, true)
+    )
+    select public.jeopardy_resolve_buzz(${sqlLiteral(sessionId)}::uuid, ${sqlLiteral(teams[0].teamId)}::uuid, false)
+    from claims;
+  `);
+  const secondBuzz = await request(config, "rpc/jeopardy_buzz", { p_code: code, p_token: teams[1].token });
+  assert.equal(secondBuzz.response.status, 200, "another team may buzz after an incorrect response");
+  dbQuery(`
+    with claims as (
+      select set_config('request.jwt.claim.sub', ${sqlLiteral(teacherId)}, true),
+             set_config('request.jwt.claims', ${sqlLiteral(claims)}, true)
+    )
+    select public.jeopardy_resolve_buzz(${sqlLiteral(sessionId)}::uuid, ${sqlLiteral(teams[1].teamId)}::uuid, true)
+    from claims;
+  `);
+  const buzzScores = dbQuery(`select name, score from public.jeopardy_teams where id in (${sqlLiteral(teams[0].teamId)}::uuid, ${sqlLiteral(teams[1].teamId)}::uuid) order by name;`);
+  assert.deepEqual(buzzScores.map((team) => team.score), [-100, 100]);
+
   dbQuery(`update public.jeopardy_sessions set state = 'final_wager' where id = ${sqlLiteral(sessionId)}::uuid returning id::text;`);
   const wager = await request(config, "rpc/jeopardy_submit_wager", { p_code: code, p_token: teams[0].token, p_wager: 0 });
   assert.equal(wager.response.status, 204);
@@ -143,7 +184,7 @@ try {
   `);
   const scored = dbQuery(`select final_scored, score from public.jeopardy_teams where id = ${sqlLiteral(teams[0].teamId)}::uuid;`);
   assert.equal(scored[0].final_scored, true);
-  assert.equal(scored[0].score, 0);
+  assert.equal(scored[0].score, -100);
 
   console.log(JSON.stringify({
     siteOrigin,
@@ -151,6 +192,8 @@ try {
     sessionCodeCreated: true,
     tenTeamsJoined: true,
     eleventhTeamRejected: true,
+    firstBuzzWon: true,
+    incorrectReopenedBuzzing: true,
     finalJeopardyCompleted: true,
   }));
 } finally {

@@ -18,6 +18,9 @@ export async function createTeamService(config) {
     state(code, token) {
       return rpc("jeopardy_team_state", { p_code: code, p_token: token });
     },
+    buzz(code, token) {
+      return rpc("jeopardy_buzz", { p_code: code, p_token: token });
+    },
     submitWager(code, token, wager) {
       return rpc("jeopardy_submit_wager", { p_code: code, p_token: token, p_wager: wager });
     },

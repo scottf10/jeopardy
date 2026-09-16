@@ -82,6 +82,16 @@ export async function createTeacherService(config) {
         "Score could not be updated",
       );
     },
+    async resolveBuzz(sessionId, teamId, correct) {
+      return fail(
+        await client.rpc("jeopardy_resolve_buzz", {
+          p_session_id: sessionId,
+          p_team_id: teamId,
+          p_correct: correct,
+        }),
+        "Buzzed answer could not be scored",
+      );
+    },
     async scoreFinal(teamId, correct) {
       return fail(
         await client.rpc("jeopardy_score_final", { p_team_id: teamId, p_correct: correct }),

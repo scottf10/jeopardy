@@ -67,6 +67,15 @@
                 <p id="host-category" class="eyebrow"></p>
                 <div id="host-value" class="clue-value"></div>
                 <h2 id="host-question"></h2>
+                <section class="buzzer-panel" aria-live="polite">
+                  <div class="buzzer-settings">
+                    <label for="buzz-seconds">Answer time</label>
+                    <input id="buzz-seconds" type="number" min="3" max="60" value="10">
+                    <span>seconds</span>
+                    <button id="save-buzz-seconds" class="button secondary" type="button">Update timer</button>
+                  </div>
+                  <div id="host-buzzer-status" class="buzzer-status"></div>
+                </section>
                 <p id="host-answer" class="answer" hidden></p>
                 <div class="host-actions">
                   <button id="reveal-answer" class="button gold" type="button">Reveal answer</button>
