@@ -6,6 +6,7 @@ Classroom-friendly Jeopardy game for `jeopardy.mrflorence.com`.
 
 - Google-authenticated teacher control room restricted by the existing private teacher allowlist.
 - Reusable question sets imported from an Excel template.
+- Private, downloadable PDF answer keys for every saved question set.
 - Six categories with five clues each plus Final Jeopardy.
 - New live sessions with six-character join codes and 1–10 team devices.
 - Server-authoritative Space-bar buzzer with an adjustable, teacher-pausable answer timer and answer-order lockout.

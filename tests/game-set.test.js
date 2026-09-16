@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { extractWorksheetRows, normalizeImportedGame } from "../public/js/game-set.js";
+import { answerKeyFilename } from "../public/js/answer-key-pdf.js";
 
 function rows() {
   return Array.from({ length: 6 }, (_, category) =>
@@ -84,4 +85,18 @@ test("teacher and team entry points expose the required classroom controls", () 
   assert.match(teacherApp, /normalizeImportedGame/);
   assert.match(teacherApp, /previous sessions and team scores/);
   assert.ok(template.size > 1_000, "the downloadable workbook must be present and non-empty");
+});
+
+test("answer-key downloads use safe filenames and include all game sections", () => {
+  assert.equal(answerKeyFilename("Honors JavaScript: Unit 1 / Review"), "honors-javascript-unit-1-review-answer-key.pdf");
+  assert.equal(answerKeyFilename("***"), "jeopardy-answer-key.pdf");
+  const pdfModule = fs.readFileSync(new URL("../public/js/answer-key-pdf.js", import.meta.url), "utf8");
+  const teacherApp = fs.readFileSync(new URL("../public/js/teacher-app.js", import.meta.url), "utf8");
+  assert.match(pdfModule, /for \(const category of set\.board_json\.categories\)/);
+  assert.match(pdfModule, /for \(const item of category\.clues/);
+  assert.match(pdfModule, /set\.final_json\.clue/);
+  assert.match(pdfModule, /set\.final_json\.answer/);
+  assert.match(pdfModule, /Teacher answer key - keep private/);
+  assert.match(teacherApp, /Answer key PDF/);
+  assert.match(teacherApp, /downloadAnswerKey\(set\)/);
 });

@@ -59,6 +59,8 @@ input:focus, select:focus { outline: 3px solid rgb(248 198 76 / 55%); border-col
 .set-card { display: flex; padding: .75rem; align-items: center; justify-content: space-between; gap: .7rem; background: rgb(255 255 255 / 7%); border-radius: .55rem; }
 .set-card strong, .set-card small { display: block; }
 .set-card small { color: var(--muted); }
+.set-card-actions { display: flex; gap: .45rem; flex-wrap: wrap; justify-content: flex-end; }
+.set-card-actions .button { min-height: 2.35rem; padding: .42rem .65rem; font-size: .82rem; }
 .session-panel { display: grid; align-content: start; gap: .7rem; }
 .host-topbar { margin-bottom: 1rem; padding: .85rem 1rem; background: var(--panel); border-radius: .8rem; }
 .join-code { display: block; color: var(--gold); font-size: clamp(2rem, 6vw, 4rem); letter-spacing: .16em; line-height: 1; }

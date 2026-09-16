@@ -1,4 +1,5 @@
 import { getRuntimeConfig } from "./config.js";
+import { downloadAnswerKey } from "./answer-key-pdf.js";
 import { buzzSecondsRemaining } from "./buzzer.js";
 import { clueKey, extractWorksheetRows, normalizeImportedGame } from "./game-set.js";
 import { createTeacherService } from "./teacher-service.js";
@@ -76,6 +77,17 @@ function renderSets() {
     const card = element("div", undefined, "set-card");
     const text = element("div");
     text.append(element("strong", set.title), element("small", `${set.board_json.categories.length} categories`));
+    const actions = element("div", undefined, "set-card-actions");
+    const answerKey = element("button", "Answer key PDF", "button primary");
+    answerKey.type = "button";
+    answerKey.addEventListener("click", async () => {
+      answerKey.disabled = true;
+      try {
+        await downloadAnswerKey(set);
+        message(`Downloaded the answer key for “${set.title}”.`, true);
+      } catch (error) { message(`Answer key could not be created: ${error.message}`); }
+      finally { answerKey.disabled = false; }
+    });
     const remove = element("button", "Delete", "button secondary");
     remove.type = "button";
     remove.addEventListener("click", async () => {
@@ -85,7 +97,8 @@ function renderSets() {
       catch (error) { message(error.message); }
       finally { remove.disabled = false; }
     });
-    card.append(text, remove);
+    actions.append(answerKey, remove);
+    card.append(text, actions);
     elements.setsList.append(card);
     elements.sessionSet.append(new Option(set.title, set.id));
   });
