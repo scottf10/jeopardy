@@ -26,6 +26,7 @@ test("rejects incomplete boards and missing final questions", () => {
 
 test("database contract protects games and limits classroom sessions", () => {
   const sql = fs.readFileSync(new URL("../supabase/migrations/0006_jeopardy_schema.sql", import.meta.url), "utf8");
+  const deleteSql = fs.readFileSync(new URL("../supabase/migrations/0009_delete_saved_sets.sql", import.meta.url), "utf8");
   assert.match(sql, /max_teams between 1 and 10/);
   assert.match(sql, /where join_code = upper\(btrim\(p_code\)\) for update/);
   assert.match(sql, /gen_random_uuid\(\)/);
@@ -38,6 +39,7 @@ test("database contract protects games and limits classroom sessions", () => {
   assert.match(sql, /jeopardy_score_final/);
   assert.match(sql, /create policy "teachers manage their jeopardy sets"/);
   assert.match(sql, /teacher_id = auth\.uid\(\) and public\.is_teacher\(\)/);
+  assert.match(deleteSql, /foreign key \(set_id\)[\s\S]*references public\.jeopardy_sets\(id\)[\s\S]*on delete cascade/);
 });
 
 test("teacher and team entry points expose the required classroom controls", () => {
@@ -55,5 +57,6 @@ test("teacher and team entry points expose the required classroom controls", () 
   assert.match(teacherService, /\.insert\(\{ title: game\.title, board_json: game\.board, final_json: game\.final \}\)/);
   assert.match(teacherService, /rpc\("jeopardy_create_session"/);
   assert.match(teacherApp, /normalizeImportedGame/);
+  assert.match(teacherApp, /previous sessions and team scores/);
   assert.ok(template.size > 1_000, "the downloadable workbook must be present and non-empty");
 });

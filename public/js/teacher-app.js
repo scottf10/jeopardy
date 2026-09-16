@@ -63,7 +63,7 @@ function renderSets() {
     const remove = element("button", "Delete", "button secondary");
     remove.type = "button";
     remove.addEventListener("click", async () => {
-      if (!confirm(`Delete “${set.title}”?`)) return;
+      if (!confirm(`Delete “${set.title}”? This also removes its previous sessions and team scores.`)) return;
       try { await service.deleteSet(set.id); await loadSets(); message("Game set deleted.", true); }
       catch (error) { message(error.message); }
     });

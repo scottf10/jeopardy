@@ -46,7 +46,10 @@ export async function createTeacherService(config) {
       );
     },
     async deleteSet(id) {
-      fail(await client.from("jeopardy_sets").delete().eq("id", id), "Game set could not be deleted");
+      return fail(
+        await client.from("jeopardy_sets").delete().eq("id", id).select("id").single(),
+        "Game set could not be deleted",
+      );
     },
     async createSession(setId, maxTeams) {
       return fail(
