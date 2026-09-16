@@ -30,4 +30,6 @@ test("teacher and team clients expose timer and Space-key controls", () => {
   assert.match(teacherApp, /resolveBuzz/);
   assert.match(teamApp, /event\.code !== "Space"/);
   assert.match(teamApp, /Press SPACE to buzz/);
+  assert.match(teamApp, /function leaveFinishedGame/);
+  assert.match(teamApp, /sessionStorage\.removeItem\("jeopardy-team"\)/);
 });

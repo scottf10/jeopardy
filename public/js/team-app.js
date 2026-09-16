@@ -104,6 +104,20 @@ function renderContent(state) {
   }
 }
 
+function leaveFinishedGame(state) {
+  const winner = [...(state.teams ?? [])].sort((a, b) => b.score - a.score)[0];
+  clearInterval(pollTimer);
+  clearInterval(countdownTimer);
+  sessionStorage.removeItem("jeopardy-team");
+  credentials = null;
+  latestState = null;
+  lastState = "";
+  elements.gameView.hidden = true;
+  elements.joinView.hidden = false;
+  elements.joinForm.reset();
+  setMessage(winner ? `Game over — ${winner.name} wins! Enter a new code to play again.` : "Game over. Enter a new code to play again.");
+}
+
 async function buzz() {
   if (buzzPending || !credentials || latestState?.state !== "clue" || !latestState?.buzzer?.canBuzz) return;
   buzzPending = true;
@@ -135,6 +149,10 @@ async function poll() {
   if (!credentials) return;
   try {
     const state = await service.state(credentials.code, credentials.token);
+    if (state.state === "finished") {
+      leaveFinishedGame(state);
+      return;
+    }
     elements.connection.textContent = "Connected";
     latestState = state;
     const serialized = JSON.stringify(state, (key, value) => key === "remainingMs" ? 0 : value);
@@ -164,6 +182,10 @@ async function initialize() {
       credentials = saved; elements.joinView.hidden = true; elements.gameView.hidden = false;
       try {
         const state = await service.state(credentials.code, credentials.token);
+        if (state.state === "finished") {
+          leaveFinishedGame(state);
+          return;
+        }
         elements.connection.textContent = "Connected";
         lastState = JSON.stringify(state);
         renderContent(state);
