@@ -36,14 +36,24 @@ test("database contract protects games and limits classroom sessions", () => {
   assert.match(sql, /case when selected\.show_answer then selected\.active_clue->'answer' else null end/);
   assert.match(sql, /final_scored boolean not null default false/);
   assert.match(sql, /jeopardy_score_final/);
+  assert.match(sql, /create policy "teachers manage their jeopardy sets"/);
+  assert.match(sql, /teacher_id = auth\.uid\(\) and public\.is_teacher\(\)/);
 });
 
 test("teacher and team entry points expose the required classroom controls", () => {
   const teacher = fs.readFileSync(new URL("../public/teacher/index.html", import.meta.url), "utf8");
   const team = fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  const teacherService = fs.readFileSync(new URL("../public/js/teacher-service.js", import.meta.url), "utf8");
+  const teacherApp = fs.readFileSync(new URL("../public/js/teacher-app.js", import.meta.url), "utf8");
+  const template = fs.statSync(new URL("../outputs/jeopardy-template/jeopardy-import-template.xlsx", import.meta.url));
   assert.match(teacher, /Download template/);
   assert.match(teacher, /Maximum teams/);
   assert.match(teacher, /Final Jeopardy/);
   assert.match(team, /Game code/);
   assert.match(team, /Team name/);
+  assert.match(teacherService, /from\("jeopardy_sets"\)\.select/);
+  assert.match(teacherService, /\.insert\(\{ title: game\.title, board_json: game\.board, final_json: game\.final \}\)/);
+  assert.match(teacherService, /rpc\("jeopardy_create_session"/);
+  assert.match(teacherApp, /normalizeImportedGame/);
+  assert.ok(template.size > 1_000, "the downloadable workbook must be present and non-empty");
 });
