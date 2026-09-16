@@ -7,13 +7,19 @@ export async function createTeacherService(config) {
     detectSessionInUrl: true,
     flowType: "pkce",
   });
+  let accessToken = "";
+  client.auth.onAuthStateChange((_event, session) => {
+    accessToken = session?.access_token ?? "";
+  });
   const fail = (result, message) => {
     if (result.error) throw new Error(`${message}: ${result.error.message}`);
     return result.data;
   };
   return {
     async getSession() {
-      return (await client.auth.getSession()).data.session;
+      const session = (await client.auth.getSession()).data.session;
+      accessToken = session?.access_token ?? "";
+      return session;
     },
     onAuthStateChange(callback) {
       return client.auth.onAuthStateChange(callback).data.subscription;
@@ -68,6 +74,20 @@ export async function createTeacherService(config) {
         await client.from("jeopardy_sessions").update(patch).eq("id", id).select("*").single(),
         "Session could not be updated",
       );
+    },
+    endSessionOnUnload(id) {
+      if (!accessToken || !id) return;
+      fetch(`${config.supabaseUrl}/rest/v1/jeopardy_sessions?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        keepalive: true,
+        headers: {
+          apikey: config.supabaseAnonKey,
+          authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json",
+          prefer: "return=minimal",
+        },
+        body: JSON.stringify({ state: "finished", buzz_team_id: null, buzz_started_at: null }),
+      }).catch(() => {});
     },
     async listTeams(sessionId) {
       return fail(

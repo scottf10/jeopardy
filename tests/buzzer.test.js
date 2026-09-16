@@ -24,10 +24,17 @@ test("buzzer migration atomically locks the session and excludes prior attempts"
 test("teacher and team clients expose timer and Space-key controls", () => {
   const teacher = fs.readFileSync(new URL("../public/teacher/index.html", import.meta.url), "utf8");
   const teacherApp = fs.readFileSync(new URL("../public/js/teacher-app.js", import.meta.url), "utf8");
+  const teacherService = fs.readFileSync(new URL("../public/js/teacher-service.js", import.meta.url), "utf8");
   const teamApp = fs.readFileSync(new URL("../public/js/team-app.js", import.meta.url), "utf8");
   assert.match(teacher, /id="buzz-seconds"/);
   assert.match(teacher, /id="host-buzzer-status"/);
   assert.match(teacherApp, /resolveBuzz/);
+  assert.match(teacherApp, /Return to the game library\? This will end the game for every team/);
+  assert.match(teacherApp, /Finish this game\? Every team will be disconnected/);
+  assert.match(teacherApp, /window\.addEventListener\("beforeunload"/);
+  assert.match(teacherApp, /window\.addEventListener\("pagehide"/);
+  assert.match(teacherService, /keepalive: true/);
+  assert.match(teacherService, /endSessionOnUnload/);
   assert.match(teamApp, /event\.code !== "Space"/);
   assert.match(teamApp, /Press SPACE to buzz/);
   assert.match(teamApp, /function leaveFinishedGame/);

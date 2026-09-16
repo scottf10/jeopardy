@@ -28,6 +28,7 @@ let currentSet = null;
 let teams = [];
 let pollTimer;
 let countdownTimer;
+let endingSession = false;
 const HOST_SESSION_KEY = "jeopardy-host-session";
 const money = (value) => `${value < 0 ? "-$" : "$"}${Math.abs(Number(value)).toLocaleString()}`;
 const message = (text, success = false) => {
@@ -257,6 +258,25 @@ async function showHost(session) {
   clearInterval(pollTimer); pollTimer = setInterval(pollHost, 650);
 }
 
+function hasActiveSession() {
+  return Boolean(currentSession && currentSession.state !== "finished");
+}
+
+async function endCurrentSession() {
+  if (!hasActiveSession() || endingSession) return;
+  endingSession = true;
+  try {
+    currentSession = await service.updateSession(currentSession.id, {
+      state: "finished",
+      buzz_team_id: null,
+      buzz_started_at: null,
+    });
+    localStorage.removeItem(HOST_SESSION_KEY);
+  } finally {
+    endingSession = false;
+  }
+}
+
 elements.importForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const file = elements.importFile.files[0];
@@ -296,20 +316,32 @@ elements.saveBuzzSeconds.addEventListener("click", async () => {
 elements.showFinalClue.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "final_clue" }); renderHost(); });
 elements.revealFinal.addEventListener("click", async () => { currentSession = await service.updateSession(currentSession.id, { state: "final_answer" }); await pollHost(); });
 elements.finishGame.addEventListener("click", async () => {
-  currentSession = await service.updateSession(currentSession.id, { state: "finished" });
-  localStorage.removeItem(HOST_SESSION_KEY);
-  await pollHost();
+  if (!confirm("Finish this game? Every team will be disconnected and returned to the join screen.")) return;
+  try {
+    await endCurrentSession();
+    await pollHost();
+  } catch (error) { message(error.message); }
 });
-elements.backLibrary.addEventListener("click", () => {
-  clearInterval(pollTimer);
-  clearInterval(countdownTimer);
-  localStorage.removeItem(HOST_SESSION_KEY);
-  currentSession = null;
-  elements.host.hidden = true;
-  elements.library.hidden = false;
+elements.backLibrary.addEventListener("click", async () => {
+  if (hasActiveSession() && !confirm("Return to the game library? This will end the game for every team.")) return;
+  try {
+    await endCurrentSession();
+    clearInterval(pollTimer);
+    clearInterval(countdownTimer);
+    currentSession = null;
+    elements.host.hidden = true;
+    elements.library.hidden = false;
+  } catch (error) { message(error.message); }
 });
 elements.signIn.addEventListener("click", async () => { try { await service.signIn(); } catch (error) { elements.authMessage.textContent = error.message; } });
-elements.signOut.addEventListener("click", async () => { await service.signOut(); location.reload(); });
+elements.signOut.addEventListener("click", async () => {
+  if (hasActiveSession() && !confirm("Sign out? This will end the game for every team.")) return;
+  try {
+    await endCurrentSession();
+    await service.signOut();
+    location.reload();
+  } catch (error) { message(error.message); }
+});
 
 async function initialize() {
   try {
@@ -331,5 +363,17 @@ async function initialize() {
     }
   } catch (error) { elements.authMessage.textContent = error.message; }
 }
-window.addEventListener("beforeunload", () => { clearInterval(pollTimer); clearInterval(countdownTimer); });
+window.addEventListener("beforeunload", (event) => {
+  if (!hasActiveSession()) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+window.addEventListener("pagehide", () => {
+  clearInterval(pollTimer);
+  clearInterval(countdownTimer);
+  if (hasActiveSession()) {
+    localStorage.removeItem(HOST_SESSION_KEY);
+    service.endSessionOnUnload(currentSession.id);
+  }
+});
 initialize();
