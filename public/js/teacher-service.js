@@ -75,18 +75,22 @@ export async function createTeacherService(config) {
         "Session could not be updated",
       );
     },
+    async deleteSession(id) {
+      return fail(
+        await client.from("jeopardy_sessions").delete().eq("id", id).select("id").single(),
+        "Session could not be ended",
+      );
+    },
     endSessionOnUnload(id) {
       if (!accessToken || !id) return;
       fetch(`${config.supabaseUrl}/rest/v1/jeopardy_sessions?id=eq.${encodeURIComponent(id)}`, {
-        method: "PATCH",
+        method: "DELETE",
         keepalive: true,
         headers: {
           apikey: config.supabaseAnonKey,
           authorization: `Bearer ${accessToken}`,
-          "content-type": "application/json",
           prefer: "return=minimal",
         },
-        body: JSON.stringify({ state: "finished", buzz_team_id: null, buzz_started_at: null }),
       }).catch(() => {});
     },
     async listTeams(sessionId) {
@@ -103,6 +107,12 @@ export async function createTeacherService(config) {
       return fail(
         await client.from("jeopardy_teams").update({ score }).eq("id", teamId).select("id").single(),
         "Score could not be updated",
+      );
+    },
+    async removeTeam(teamId) {
+      return fail(
+        await client.from("jeopardy_teams").delete().eq("id", teamId).select("id").single(),
+        "Team could not be removed",
       );
     },
     async resolveBuzz(sessionId, teamId, correct) {

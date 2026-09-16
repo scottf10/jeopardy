@@ -21,6 +21,8 @@ let latestState = null;
 let buzzPending = false;
 let pollInFlight = false;
 let joinPending = false;
+let finalSubmitPending = false;
+const TEAM_SESSION_KEY = "jeopardy-team";
 const money = (value) => `${value < 0 ? "-$" : "$"}${Math.abs(Number(value)).toLocaleString()}`;
 const setMessage = (text) => { elements.message.textContent = text; };
 
@@ -99,13 +101,11 @@ function renderContent(state) {
     elements.content.innerHTML = `<div class="active-clue"><p class="eyebrow">${escapeText(active.categoryName)}</p><div class="clue-value">${money(active.value)}</div><h2>${escapeText(active.clue)}</h2>${state.state === "clue" ? buzzerMarkup(state) : ""}${active.answer ? `<p class="answer">${escapeText(active.answer)}</p>` : ""}</div>`;
     document.querySelector("#buzz-button")?.addEventListener("click", buzz);
     startBuzzCountdown(state.buzzer);
-  } else if (state.state === "final_wager") {
+  } else if (state.state === "final_wager" || state.state === "final_clue") {
     const max = Math.max(0, Number(state.myTeam.score));
-    elements.content.innerHTML = `<form id="wager-form" class="final-form"><p class="eyebrow">Final Jeopardy</p><h2>${escapeText(state.final.category)}</h2><label for="wager">Wager (maximum ${money(max)})</label><input id="wager" type="number" min="0" max="${max}" value="${state.myTeam.finalWager ?? 0}" required><button class="button gold" type="submit">Lock wager</button><p>${state.myTeam.finalWager !== null ? "Wager submitted. You may change it until the clue appears." : ""}</p></form>`;
-    document.querySelector("#wager-form").addEventListener("submit", submitWager);
-  } else if (state.state === "final_clue") {
-    elements.content.innerHTML = `<form id="answer-form" class="final-form"><p class="eyebrow">Final Jeopardy — ${escapeText(state.final.category)}</p><h2>${escapeText(state.final.clue)}</h2><label for="final-response">Your response</label><input id="final-response" maxlength="300" value="${escapeText(state.myTeam.finalAnswer ?? "")}" required><button class="button gold" type="submit">Lock response</button><p>${state.myTeam.finalSubmitted ? "Response submitted. You may change it until time is called." : ""}</p></form>`;
-    document.querySelector("#answer-form").addEventListener("submit", submitAnswer);
+    const locked = state.myTeam.finalSubmitted;
+    elements.content.innerHTML = `<form id="final-form" class="final-form"><p class="eyebrow">Final Jeopardy — ${escapeText(state.final.category)}</p><h2>${escapeText(state.final.clue)}</h2><label for="wager">Wager (maximum ${money(max)})</label><input id="wager" type="number" min="0" max="${max}" value="${state.myTeam.finalWager ?? 0}" ${locked ? "disabled" : ""} required><label for="final-response">Your final response</label><input id="final-response" maxlength="300" value="${escapeText(state.myTeam.finalAnswer ?? "")}" ${locked ? "disabled" : ""} required><button class="button gold" type="submit" ${locked ? "disabled" : ""}>${locked ? "Wager and response locked" : "Lock in wager and response"}</button><p>${locked ? "Your submission is locked. Waiting for the teacher to reveal the answer." : "Check both entries before locking in. You cannot change them after submitting."}</p></form>`;
+    if (!locked) document.querySelector("#final-form").addEventListener("submit", submitFinal);
   } else if (state.state === "final_answer") {
     elements.content.innerHTML = `<div class="active-clue"><p class="eyebrow">Final Jeopardy — ${escapeText(state.final.category)}</p><h2>${escapeText(state.final.clue)}</h2><p class="answer">${escapeText(state.final.answer)}</p><p>Waiting for the teacher to score responses.</p></div>`;
   } else {
@@ -118,7 +118,7 @@ function leaveFinishedGame(state) {
   const winner = [...(state.teams ?? [])].sort((a, b) => b.score - a.score)[0];
   clearInterval(pollTimer);
   clearInterval(countdownTimer);
-  sessionStorage.removeItem("jeopardy-team");
+  localStorage.removeItem(TEAM_SESSION_KEY);
   credentials = null;
   latestState = null;
   lastState = "";
@@ -126,6 +126,19 @@ function leaveFinishedGame(state) {
   elements.joinView.hidden = false;
   elements.joinForm.reset();
   setMessage(winner ? `Game over — ${winner.name} wins! Enter a new code to play again.` : "Game over. Enter a new code to play again.");
+}
+
+function leaveEndedGame(message = "The teacher ended the game. Enter a new code to play again.") {
+  clearInterval(pollTimer);
+  clearInterval(countdownTimer);
+  localStorage.removeItem(TEAM_SESSION_KEY);
+  credentials = null;
+  latestState = null;
+  lastState = "";
+  elements.gameView.hidden = true;
+  elements.joinView.hidden = false;
+  elements.joinForm.reset();
+  setMessage(message);
 }
 
 async function buzz() {
@@ -143,16 +156,24 @@ async function buzz() {
   }
 }
 
-async function submitWager(event) {
+async function submitFinal(event) {
   event.preventDefault();
-  try { await service.submitWager(credentials.code, credentials.token, Number(document.querySelector("#wager").value)); await poll(); }
-  catch (error) { elements.connection.textContent = error.message; }
-}
-
-async function submitAnswer(event) {
-  event.preventDefault();
-  try { await service.submitAnswer(credentials.code, credentials.token, document.querySelector("#final-response").value); await poll(); }
-  catch (error) { elements.connection.textContent = error.message; }
+  if (finalSubmitPending) return;
+  finalSubmitPending = true;
+  const button = event.currentTarget.querySelector("button[type='submit']");
+  button.disabled = true;
+  try {
+    await service.submitFinal(
+      credentials.code,
+      credentials.token,
+      Number(document.querySelector("#wager").value),
+      document.querySelector("#final-response").value,
+    );
+    await poll();
+  } catch (error) {
+    elements.connection.textContent = error.message;
+    button.disabled = false;
+  } finally { finalSubmitPending = false; }
 }
 
 async function poll() {
@@ -169,7 +190,13 @@ async function poll() {
     renderScoreboard(state);
     const serialized = contentStateKey(state);
     if (serialized !== lastState) { lastState = serialized; renderContent(state); }
-  } catch (error) { elements.connection.textContent = `Reconnecting… ${error.message}`; }
+  } catch (error) {
+    if (/Game session not found|Game code not found|Team access expired/i.test(error.message)) {
+      leaveEndedGame();
+      return;
+    }
+    elements.connection.textContent = `Reconnecting… ${error.message}`;
+  }
   finally { pollInFlight = false; }
 }
 
@@ -185,7 +212,7 @@ elements.joinForm.addEventListener("submit", async (event) => {
     setMessage("");
     const joined = await service.join(code, name);
     credentials = { code, token: joined.token };
-    sessionStorage.setItem("jeopardy-team", JSON.stringify(credentials));
+    localStorage.setItem(TEAM_SESSION_KEY, JSON.stringify(credentials));
     elements.joinView.hidden = true; elements.gameView.hidden = false;
     await poll(); pollTimer = setInterval(poll, 650);
   } catch (error) { setMessage(error.message); }
@@ -195,7 +222,7 @@ elements.joinForm.addEventListener("submit", async (event) => {
 async function initialize() {
   try {
     service = await createTeamService(getRuntimeConfig());
-    const saved = JSON.parse(sessionStorage.getItem("jeopardy-team") || "null");
+    const saved = JSON.parse(localStorage.getItem(TEAM_SESSION_KEY) || "null");
     if (saved?.code && saved?.token) {
       credentials = saved; elements.joinView.hidden = true; elements.gameView.hidden = false;
       try {
@@ -210,7 +237,7 @@ async function initialize() {
         renderContent(state);
         pollTimer = setInterval(poll, 650);
       } catch {
-        sessionStorage.removeItem("jeopardy-team");
+        localStorage.removeItem(TEAM_SESSION_KEY);
         credentials = null;
         elements.gameView.hidden = true;
         elements.joinView.hidden = false;

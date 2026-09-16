@@ -95,7 +95,7 @@ try {
       select set_config('request.jwt.claim.sub', ${sqlLiteral(teacherId)}, true),
              set_config('request.jwt.claims', ${sqlLiteral(claims)}, true)
     )
-    select public.jeopardy_create_session(${sqlLiteral(setId)}::uuid, 10) as result
+    select public.jeopardy_create_session(${sqlLiteral(setId)}::uuid, 5) as result
     from claims;
   `);
   const created = typeof sessionRows[0].result === "string" ? JSON.parse(sessionRows[0].result) : sessionRows[0].result;
@@ -105,18 +105,18 @@ try {
 
   const config = await runtimeConfig();
   const teams = [];
-  for (let index = 1; index <= 10; index += 1) {
+  for (let index = 1; index <= 5; index += 1) {
     const joined = await request(config, "rpc/jeopardy_join_session", { p_code: code, p_team_name: `Verification Team ${index}` });
     assert.equal(joined.response.status, 200, `team ${index} must be able to join`);
     teams.push(joined.payload);
   }
-  const overLimit = await request(config, "rpc/jeopardy_join_session", { p_code: code, p_team_name: "Verification Team 11" });
-  assert.notEqual(overLimit.response.status, 200, "an eleventh team must be rejected");
+  const overLimit = await request(config, "rpc/jeopardy_join_session", { p_code: code, p_team_name: "Verification Team 6" });
+  assert.notEqual(overLimit.response.status, 200, "a sixth team must be rejected from a five-team game");
 
   const firstState = await request(config, "rpc/jeopardy_team_state", { p_code: code, p_token: teams[0].token });
   assert.equal(firstState.response.status, 200);
-  assert.equal(firstState.payload.maxTeams, 10);
-  assert.equal(firstState.payload.teams.length, 10);
+  assert.equal(firstState.payload.maxTeams, 5);
+  assert.equal(firstState.payload.teams.length, 5);
   assert.equal(firstState.payload.state, "lobby");
 
   dbQuery(`
@@ -160,13 +160,25 @@ try {
   const buzzScores = dbQuery(`select name, score from public.jeopardy_teams where id in (${sqlLiteral(teams[0].teamId)}::uuid, ${sqlLiteral(teams[1].teamId)}::uuid) order by name;`);
   assert.deepEqual(buzzScores.map((team) => team.score), [-100, 100]);
 
-  dbQuery(`update public.jeopardy_sessions set state = 'final_wager' where id = ${sqlLiteral(sessionId)}::uuid returning id::text;`);
-  const wager = await request(config, "rpc/jeopardy_submit_wager", { p_code: code, p_token: teams[0].token, p_wager: 0 });
-  assert.equal(wager.response.status, 204);
-
   dbQuery(`update public.jeopardy_sessions set state = 'final_clue' where id = ${sqlLiteral(sessionId)}::uuid returning id::text;`);
-  const answer = await request(config, "rpc/jeopardy_submit_answer", { p_code: code, p_token: teams[0].token, p_answer: "Verification response" });
-  assert.equal(answer.response.status, 204);
+  const finalSubmission = await request(config, "rpc/jeopardy_submit_final", {
+    p_code: code,
+    p_token: teams[0].token,
+    p_wager: 0,
+    p_answer: "Verification response",
+  });
+  assert.equal(finalSubmission.response.status, 204);
+  const duplicateSubmission = await request(config, "rpc/jeopardy_submit_final", {
+    p_code: code,
+    p_token: teams[0].token,
+    p_wager: 0,
+    p_answer: "Changed response",
+  });
+  assert.notEqual(duplicateSubmission.response.status, 204, "a locked Final Jeopardy response cannot be changed");
+  const savedFinal = dbQuery(`select final_wager, final_answer, final_submitted from public.jeopardy_teams where id = ${sqlLiteral(teams[0].teamId)}::uuid;`);
+  assert.equal(savedFinal[0].final_wager, 0);
+  assert.equal(savedFinal[0].final_answer, "Verification response");
+  assert.equal(savedFinal[0].final_submitted, true);
 
   dbQuery(`update public.jeopardy_sessions set state = 'final_answer' where id = ${sqlLiteral(sessionId)}::uuid returning id::text;`);
   const revealed = await request(config, "rpc/jeopardy_team_state", { p_code: code, p_token: teams[0].token });
@@ -186,21 +198,26 @@ try {
   assert.equal(scored[0].final_scored, true);
   assert.equal(scored[0].score, -100);
 
-  dbQuery(`update public.jeopardy_sessions set state = 'finished' where id = ${sqlLiteral(sessionId)}::uuid returning id::text;`);
-  const finished = await request(config, "rpc/jeopardy_team_state", { p_code: code, p_token: teams[0].token });
-  assert.equal(finished.response.status, 200);
-  assert.equal(finished.payload.state, "finished");
+  const deletedSessionId = sessionId;
+  dbQuery(`delete from public.jeopardy_sessions where id = ${sqlLiteral(deletedSessionId)}::uuid returning id::text;`);
+  sessionId = undefined;
+  const ended = await request(config, "rpc/jeopardy_team_state", { p_code: code, p_token: teams[0].token });
+  assert.notEqual(ended.response.status, 200, "deleted sessions must disconnect team devices");
+  const remainingTeams = dbQuery(`select count(*)::integer as count from public.jeopardy_teams where session_id = ${sqlLiteral(deletedSessionId)}::uuid;`);
+  assert.equal(remainingTeams[0].count, 0, "ending a session must remove its team records");
 
   console.log(JSON.stringify({
     siteOrigin,
     teacherAccess: true,
     sessionCodeCreated: true,
-    tenTeamsJoined: true,
-    eleventhTeamRejected: true,
+    fiveTeamsJoined: true,
+    sixthTeamRejected: true,
     firstBuzzWon: true,
     incorrectReopenedBuzzing: true,
     finalJeopardyCompleted: true,
-    finishedStateReachedTeams: true,
+    combinedFinalSubmissionLocked: true,
+    endedSessionDisconnectedTeams: true,
+    endedSessionDataCleared: true,
   }));
 } finally {
   if (sessionId) dbQuery(`delete from public.jeopardy_sessions where id = ${sqlLiteral(sessionId)}::uuid; select true as cleaned;`);

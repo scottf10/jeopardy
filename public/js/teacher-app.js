@@ -18,8 +18,8 @@ const elements = {
   buzzSeconds: $("#buzz-seconds"), saveBuzzSeconds: $("#save-buzz-seconds"),
   buzzerStatus: $("#host-buzzer-status"),
   final: $("#host-final"), finalCategory: $("#final-category"), finalQuestion: $("#final-question"),
-  finalAnswer: $("#final-answer"), showFinalClue: $("#show-final-clue"), revealFinal: $("#reveal-final"),
-  finishGame: $("#finish-game"), teams: $("#host-teams"),
+  finalAnswer: $("#final-answer"), revealFinal: $("#reveal-final"),
+  finishGame: $("#finish-game"), teams: $("#host-teams"), teamCount: $("#host-team-count"),
 };
 
 let service;
@@ -117,35 +117,56 @@ function renderBoard() {
 
 function renderTeams() {
   elements.teams.replaceChildren();
+  elements.teamCount.textContent = currentSession?.state === "lobby"
+    ? `Teams (${teams.length} / ${currentSession.max_teams})`
+    : `Teams (${teams.length})`;
   if (!teams.length) { elements.teams.append(element("p", "Waiting for teams to join…")); return; }
   teams.forEach((team) => {
     const card = element("div", undefined, "host-team");
     card.classList.toggle("is-buzzed", team.id === currentSession?.buzz_team_id);
     const top = element("div", undefined, "host-team-row");
     top.append(element("strong", team.name), element("span", money(team.score), "host-team-score"));
-    const controls = element("div", undefined, "score-controls");
-    const value = Number(currentSession?.active_clue?.value ?? 100);
-    const subtract = element("button", `−${money(value)}`, "button secondary");
-    const add = element("button", `+${money(value)}`, "button primary");
-    subtract.addEventListener("click", () => changeScore(team, -value));
-    add.addEventListener("click", () => changeScore(team, value));
-    controls.append(subtract, add);
-    card.append(top, controls);
-    if (["final_answer", "finished"].includes(currentSession?.state)) {
+    card.append(top);
+    if (currentSession?.state === "lobby") {
+      const controls = element("div", undefined, "score-controls");
+      const remove = element("button", "Remove from lobby", "button secondary");
+      remove.type = "button";
+      remove.addEventListener("click", () => removeTeam(team));
+      controls.append(remove);
+      card.append(controls);
+    } else if (!["final_wager", "final_clue", "final_answer", "finished"].includes(currentSession?.state)) {
+      const controls = element("div", undefined, "score-controls");
+      const value = Number(currentSession?.active_clue?.value ?? 100);
+      const subtract = element("button", `−${money(value)}`, "button secondary");
+      const add = element("button", `+${money(value)}`, "button primary");
+      subtract.addEventListener("click", () => changeScore(team, -value));
+      add.addEventListener("click", () => changeScore(team, value));
+      controls.append(subtract, add);
+      card.append(controls);
+    }
+    if (["final_wager", "final_clue", "final_answer", "finished"].includes(currentSession?.state)) {
       const response = element("div", undefined, "final-response");
-      response.append(
-        element("div", `Wager: ${money(team.final_wager ?? 0)}`),
-        element("div", `Response: ${team.final_answer || "No response"}`),
-      );
-      const finalControls = element("div", undefined, "score-controls");
-      const finalLocked = team.final_scored || currentSession?.state === "finished";
-      const wrong = element("button", team.final_scored ? "Scored" : currentSession?.state === "finished" ? "Game finished" : "Incorrect", "button secondary");
-      const right = element("button", "Correct", "button gold");
-      wrong.disabled = finalLocked;
-      right.disabled = finalLocked;
-      wrong.addEventListener("click", () => scoreFinal(team, false));
-      right.addEventListener("click", () => scoreFinal(team, true));
-      finalControls.append(wrong, right); response.append(finalControls); card.append(response);
+      if (team.final_submitted) {
+        response.append(
+          element("strong", "Locked in"),
+          element("div", `Wager: ${money(team.final_wager)}`),
+          element("div", `Response: ${team.final_answer}`),
+        );
+      } else {
+        response.append(element("div", "Waiting for wager and response…"));
+      }
+      if (currentSession?.state === "final_answer" && team.final_submitted) {
+        const finalControls = element("div", undefined, "score-controls");
+        const wrong = element("button", team.final_scored ? "Scored" : "Deduct wager", "button secondary");
+        const right = element("button", "Award wager", "button gold");
+        wrong.disabled = team.final_scored;
+        right.disabled = team.final_scored;
+        wrong.addEventListener("click", () => scoreFinal(team, false));
+        right.addEventListener("click", () => scoreFinal(team, true));
+        finalControls.append(wrong, right);
+        response.append(finalControls);
+      }
+      card.append(response);
     }
     elements.teams.append(card);
   });
@@ -197,6 +218,15 @@ function renderHostBuzzer() {
 async function changeScore(team, amount) {
   try { await service.setTeamScore(team.id, Number(team.score) + amount); await pollHost(); }
   catch (error) { message(error.message); }
+}
+
+async function removeTeam(team) {
+  if (!confirm(`Remove “${team.name}” and free this team spot?`)) return;
+  try {
+    await service.removeTeam(team.id);
+    await pollHost();
+    message(`${team.name} was removed from the lobby.`, true);
+  } catch (error) { message(error.message); }
 }
 
 async function scoreFinal(team, correct) {
@@ -269,11 +299,10 @@ function renderHost() {
   }
   if (!elements.final.hidden) {
     elements.finalCategory.textContent = currentSession.final_clue.category;
-    elements.finalQuestion.textContent = currentSession.state === "final_wager" ? "Teams are entering wagers." : currentSession.final_clue.clue;
+    elements.finalQuestion.textContent = currentSession.final_clue.clue;
     elements.finalAnswer.textContent = currentSession.final_clue.answer;
     elements.finalAnswer.hidden = !["final_answer", "finished"].includes(currentSession.state);
-    elements.showFinalClue.hidden = currentSession.state !== "final_wager";
-    elements.revealFinal.hidden = currentSession.state !== "final_clue";
+    elements.revealFinal.hidden = !["final_wager", "final_clue"].includes(currentSession.state);
     elements.finishGame.hidden = currentSession.state !== "final_answer";
   }
   lastHostState = JSON.stringify([currentSession, teams]);
@@ -312,18 +341,29 @@ function hasActiveSession() {
 }
 
 async function endCurrentSession() {
-  if (!hasActiveSession() || endingSession) return;
+  if (!hasActiveSession() || endingSession) return false;
   endingSession = true;
+  const sessionId = currentSession.id;
   try {
-    await updateGameSession({
-      state: "finished",
-      buzz_team_id: null,
-      buzz_started_at: null,
-    });
+    hostRevision += 1;
+    await service.deleteSession(sessionId);
     localStorage.removeItem(HOST_SESSION_KEY);
+    return true;
   } finally {
     endingSession = false;
   }
+}
+
+function returnToLibrary(successText) {
+  clearInterval(pollTimer);
+  clearInterval(countdownTimer);
+  currentSession = null;
+  currentSet = null;
+  teams = [];
+  lastHostState = "";
+  elements.host.hidden = true;
+  elements.library.hidden = false;
+  if (successText) message(successText, true);
 }
 
 elements.importForm.addEventListener("submit", async (event) => {
@@ -360,7 +400,7 @@ elements.createSession.addEventListener("click", async () => {
 elements.startGame.addEventListener("click", () => applySessionPatch({ state: "board" }));
 elements.revealAnswer.addEventListener("click", () => applySessionPatch({ state: "answer", show_answer: true, buzz_team_id: null, buzz_started_at: null }));
 elements.returnBoard.addEventListener("click", () => applySessionPatch({ state: "board", active_clue: null, show_answer: false, buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [] }));
-elements.beginFinal.addEventListener("click", () => applySessionPatch({ state: "final_wager", active_clue: null, buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [] }));
+elements.beginFinal.addEventListener("click", () => applySessionPatch({ state: "final_clue", active_clue: null, buzz_team_id: null, buzz_started_at: null, buzzed_team_ids: [] }));
 elements.saveBuzzSeconds.addEventListener("click", async () => {
   const seconds = Number(elements.buzzSeconds.value);
   if (!Number.isInteger(seconds) || seconds < 3 || seconds > 60) return message("Answer time must be between 3 and 60 seconds.");
@@ -370,24 +410,19 @@ elements.saveBuzzSeconds.addEventListener("click", async () => {
     renderHost();
   } catch (error) { message(error.message); }
 });
-elements.showFinalClue.addEventListener("click", () => applySessionPatch({ state: "final_clue" }));
 elements.revealFinal.addEventListener("click", () => applySessionPatch({ state: "final_answer" }));
 elements.finishGame.addEventListener("click", async () => {
   if (!confirm("Finish this game? Every team will be disconnected and returned to the join screen.")) return;
   try {
     await endCurrentSession();
-    await pollHost();
+    returnToLibrary("Game ended and its session data was cleared.");
   } catch (error) { message(error.message); }
 });
 elements.backLibrary.addEventListener("click", async () => {
   if (hasActiveSession() && !confirm("Return to the game library? This will end the game for every team.")) return;
   try {
     await endCurrentSession();
-    clearInterval(pollTimer);
-    clearInterval(countdownTimer);
-    currentSession = null;
-    elements.host.hidden = true;
-    elements.library.hidden = false;
+    returnToLibrary("Game ended and its session data was cleared.");
   } catch (error) { message(error.message); }
 });
 elements.signIn.addEventListener("click", async () => { try { await service.signIn(); } catch (error) { elements.authMessage.textContent = error.message; } });

@@ -21,11 +21,13 @@ export async function createTeamService(config) {
     buzz(code, token) {
       return rpc("jeopardy_buzz", { p_code: code, p_token: token });
     },
-    submitWager(code, token, wager) {
-      return rpc("jeopardy_submit_wager", { p_code: code, p_token: token, p_wager: wager });
-    },
-    submitAnswer(code, token, answer) {
-      return rpc("jeopardy_submit_answer", { p_code: code, p_token: token, p_answer: answer });
+    submitFinal(code, token, wager, answer) {
+      return rpc("jeopardy_submit_final", {
+        p_code: code,
+        p_token: token,
+        p_wager: wager,
+        p_answer: answer,
+      });
     },
   };
 }

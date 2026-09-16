@@ -35,13 +35,33 @@ test("teacher and team clients expose timer and Space-key controls", () => {
   assert.match(teacherApp, /window\.addEventListener\("pagehide"/);
   assert.match(teacherService, /keepalive: true/);
   assert.match(teacherService, /endSessionOnUnload/);
+  assert.match(teacherService, /method: "DELETE"/);
+  assert.match(teacherService, /async deleteSession/);
+  assert.match(teacherService, /async removeTeam/);
+  assert.match(teacherApp, /Teams \(\$\{teams\.length\} \/ \$\{currentSession\.max_teams\}\)/);
+  assert.match(teacherApp, /Remove from lobby/);
+  assert.match(teacherApp, /await service\.deleteSession\(sessionId\)/);
   assert.match(teacherApp, /hostPollInFlight/);
   assert.match(teacherApp, /sessionCreatePending/);
   assert.match(teamApp, /event\.code !== "Space"/);
   assert.match(teamApp, /Press SPACE to buzz/);
   assert.match(teamApp, /function leaveFinishedGame/);
-  assert.match(teamApp, /sessionStorage\.removeItem\("jeopardy-team"\)/);
+  assert.match(teamApp, /localStorage\.removeItem\(TEAM_SESSION_KEY\)/);
+  assert.match(teamApp, /localStorage\.setItem\(TEAM_SESSION_KEY/);
   assert.match(teamApp, /pollInFlight/);
   assert.match(teamApp, /joinPending/);
   assert.match(teamApp, /function contentStateKey/);
+  assert.match(teamApp, /Lock in wager and response/);
+  assert.match(teamApp, /service\.submitFinal/);
+  assert.match(teamApp, /Game session not found\|Game code not found\|Team access expired/);
+});
+
+test("Final Jeopardy submission is combined, validated, and locked atomically", () => {
+  const sql = fs.readFileSync(new URL("../supabase/migrations/0010_final_submission.sql", import.meta.url), "utf8");
+  assert.match(sql, /jeopardy_submit_final/);
+  assert.match(sql, /for update/);
+  assert.match(sql, /final_submitted then raise exception/);
+  assert.match(sql, /p_wager > greatest\(mine\.score, 0\)/);
+  assert.match(sql, /final_wager = p_wager,[\s\S]*final_answer = clean_answer,[\s\S]*final_submitted = true/);
+  assert.match(sql, /grant execute on function public\.jeopardy_submit_final\(text, uuid, integer, text\) to anon, authenticated/);
 });
