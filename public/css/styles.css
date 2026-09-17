@@ -98,6 +98,7 @@ input:focus, select:focus { outline: 3px solid rgb(248 198 76 / 55%); border-col
 .final-form { width: min(100%, 28rem); display: grid; gap: .7rem; }
 .leaderboard-panel { min-height: 32rem; display: grid; align-content: center; justify-items: center; gap: 1rem; }
 .leaderboard-panel h2, .student-leaderboard h2 { margin-bottom: .4rem; font-size: clamp(2rem, 6vw, 4rem); }
+.winner-announcement { margin-bottom: .4rem; color: var(--gold); font-size: clamp(1.25rem, 4vw, 2.2rem); font-weight: 950; }
 .leaderboard { width: min(100%, 52rem); display: grid; gap: .6rem; }
 .leaderboard-row { min-height: 4.25rem; display: grid; grid-template-columns: 5rem minmax(0, 1fr) auto; align-items: center; gap: 1rem; padding: .8rem 1rem; background: rgb(255 255 255 / 9%); border: 1px solid rgb(255 255 255 / 14%); border-radius: .7rem; }
 .leaderboard-row.winner { color: var(--blue-950); background: var(--gold); border-color: var(--gold); box-shadow: 0 10px 30px rgb(248 198 76 / 20%); }

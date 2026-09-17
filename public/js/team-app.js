@@ -1,7 +1,7 @@
 import { getRuntimeConfig } from "./config.js";
 import { buzzSecondsRemaining, createBuzzDeadline, isTypingTarget } from "./buzzer.js";
 import { createTeamService } from "./team-service.js";
-import { rankTeams } from "./leaderboard.js";
+import { rankTeams, winnerAnnouncement } from "./leaderboard.js";
 
 const elements = {
   joinView: document.querySelector("#join-view"), gameView: document.querySelector("#game-view"),
@@ -53,7 +53,8 @@ function renderBoard(board) {
 }
 
 function leaderboardMarkup(teams) {
-  return `<div class="leaderboard">${rankTeams(teams).map((team, index) => `
+  const ranked = rankTeams(teams);
+  return `<p class="winner-announcement">${escapeText(winnerAnnouncement(ranked[0]?.name))}</p><div class="leaderboard">${ranked.map((team, index) => `
     <div class="leaderboard-row${index === 0 ? " winner" : ""}">
       <span class="leaderboard-place">${team.place}</span>
       <strong class="leaderboard-name">${escapeText(team.name)}</strong>
@@ -125,7 +126,7 @@ function renderContent(state) {
     elements.content.innerHTML = `<section class="student-leaderboard"><p class="eyebrow">Final results</p><h2>Leaderboard</h2>${leaderboardMarkup(state.teams)}</section>`;
   } else {
     const winner = [...state.teams].sort((a, b) => b.score - a.score)[0];
-    elements.content.innerHTML = `<div class="waiting"><p class="eyebrow">Game over</p><h2>${winner ? `${escapeText(winner.name)} wins!` : "Thanks for playing!"}</h2></div>`;
+    elements.content.innerHTML = `<div class="waiting"><p class="eyebrow">Game over</p><h2>${winner ? escapeText(winnerAnnouncement(winner.name)) : "Thanks for playing!"}</h2></div>`;
   }
 }
 
@@ -140,7 +141,7 @@ function leaveFinishedGame(state) {
   elements.gameView.hidden = true;
   elements.joinView.hidden = false;
   elements.joinForm.reset();
-  setMessage(winner ? `Game over — ${winner.name} wins! Enter a new code to play again.` : "Game over. Enter a new code to play again.");
+  setMessage(winner ? `Game over — ${winnerAnnouncement(winner.name)} Enter a new code to play again.` : "Game over. Enter a new code to play again.");
 }
 
 function leaveEndedGame(message = "The teacher ended the game. Enter a new code to play again.") {

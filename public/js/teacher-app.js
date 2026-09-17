@@ -2,7 +2,7 @@ import { getRuntimeConfig } from "./config.js";
 import { downloadAnswerKey } from "./answer-key-pdf.js";
 import { buzzSecondsRemaining } from "./buzzer.js";
 import { clueKey, extractWorksheetRows, normalizeImportedGame } from "./game-set.js";
-import { rankTeams } from "./leaderboard.js";
+import { rankTeams, winnerAnnouncement } from "./leaderboard.js";
 import { createTeacherService } from "./teacher-service.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -23,6 +23,7 @@ const elements = {
   finalAnswer: $("#final-answer"), finalScoringStatus: $("#final-scoring-status"),
   revealFinal: $("#reveal-final"), showLeaderboard: $("#show-leaderboard"),
   leaderboard: $("#host-leaderboard"), leaderboardList: $("#teacher-leaderboard"),
+  teacherWinner: $("#teacher-winner"),
   finishGame: $("#finish-game"), teams: $("#host-teams"), teamCount: $("#host-team-count"),
   teamsPanel: $("#teams-panel"), hostLayout: $(".host-layout"),
 };
@@ -192,7 +193,9 @@ function renderTeams() {
 
 function renderLeaderboard() {
   elements.leaderboardList.replaceChildren();
-  rankTeams(teams).forEach((team, index) => {
+  const ranked = rankTeams(teams);
+  elements.teacherWinner.textContent = winnerAnnouncement(ranked[0]?.name);
+  ranked.forEach((team, index) => {
     const row = element("div", undefined, `leaderboard-row${index === 0 ? " winner" : ""}`);
     row.append(
       element("span", team.place, "leaderboard-place"),
