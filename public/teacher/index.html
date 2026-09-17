@@ -87,13 +87,20 @@
                 <h2 id="final-category"></h2>
                 <p id="final-question"></p>
                 <p id="final-answer" class="answer" hidden></p>
+                <p id="final-scoring-status"></p>
                 <div class="host-actions">
                   <button id="reveal-final" class="button gold" type="button">Reveal answer &amp; score</button>
-                  <button id="finish-game" class="button secondary" type="button">Finish game</button>
+                  <button id="show-leaderboard" class="button primary" type="button">Show leaderboard</button>
                 </div>
               </article>
+              <article id="host-leaderboard" class="panel leaderboard-panel" hidden>
+                <p class="eyebrow">Final results</p>
+                <h2>Leaderboard</h2>
+                <div id="teacher-leaderboard" class="leaderboard"></div>
+                <button id="finish-game" class="button secondary" type="button">Finish game</button>
+              </article>
             </section>
-            <aside class="panel teams-panel"><h2 id="host-team-count">Teams</h2><div id="host-teams"></div></aside>
+            <aside id="teams-panel" class="panel teams-panel"><h2 id="host-team-count">Teams</h2><div id="host-teams"></div></aside>
           </div>
         </section>
       </section>

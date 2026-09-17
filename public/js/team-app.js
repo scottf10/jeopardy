@@ -1,6 +1,7 @@
 import { getRuntimeConfig } from "./config.js";
 import { buzzSecondsRemaining, createBuzzDeadline, isTypingTarget } from "./buzzer.js";
 import { createTeamService } from "./team-service.js";
+import { rankTeams } from "./leaderboard.js";
 
 const elements = {
   joinView: document.querySelector("#join-view"), gameView: document.querySelector("#game-view"),
@@ -49,6 +50,15 @@ function renderBoard(board) {
     const clue = category.clues[row];
     return `<div class="board-clue ${clue.used ? "used" : ""}">${clue.used ? "" : `$${clue.value}`}</div>`;
   }).join("")).join("")}</div>`;
+}
+
+function leaderboardMarkup(teams) {
+  return `<div class="leaderboard">${rankTeams(teams).map((team, index) => `
+    <div class="leaderboard-row${index === 0 ? " winner" : ""}">
+      <span class="leaderboard-place">${team.place}</span>
+      <strong class="leaderboard-name">${escapeText(team.name)}</strong>
+      <span class="leaderboard-score">${money(team.score)}</span>
+    </div>`).join("")}</div>`;
 }
 
 function buzzerMarkup(state) {
@@ -111,6 +121,8 @@ function renderContent(state) {
     if (!locked) document.querySelector("#final-form").addEventListener("submit", submitFinal);
   } else if (state.state === "final_answer") {
     elements.content.innerHTML = `<div class="active-clue"><p class="eyebrow">Final Jeopardy — ${escapeText(state.final.category)}</p><h2>${escapeText(state.final.clue)}</h2><p class="answer">${escapeText(state.final.answer)}</p><p>Waiting for the teacher to score responses.</p></div>`;
+  } else if (state.state === "leaderboard") {
+    elements.content.innerHTML = `<section class="student-leaderboard"><p class="eyebrow">Final results</p><h2>Leaderboard</h2>${leaderboardMarkup(state.teams)}</section>`;
   } else {
     const winner = [...state.teams].sort((a, b) => b.score - a.score)[0];
     elements.content.innerHTML = `<div class="waiting"><p class="eyebrow">Game over</p><h2>${winner ? `${escapeText(winner.name)} wins!` : "Thanks for playing!"}</h2></div>`;

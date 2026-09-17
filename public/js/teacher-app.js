@@ -2,6 +2,7 @@ import { getRuntimeConfig } from "./config.js";
 import { downloadAnswerKey } from "./answer-key-pdf.js";
 import { buzzSecondsRemaining } from "./buzzer.js";
 import { clueKey, extractWorksheetRows, normalizeImportedGame } from "./game-set.js";
+import { rankTeams } from "./leaderboard.js";
 import { createTeacherService } from "./teacher-service.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -19,8 +20,11 @@ const elements = {
   buzzSeconds: $("#buzz-seconds"), saveBuzzSeconds: $("#save-buzz-seconds"),
   buzzerStatus: $("#host-buzzer-status"),
   final: $("#host-final"), finalCategory: $("#final-category"), finalQuestion: $("#final-question"),
-  finalAnswer: $("#final-answer"), revealFinal: $("#reveal-final"),
+  finalAnswer: $("#final-answer"), finalScoringStatus: $("#final-scoring-status"),
+  revealFinal: $("#reveal-final"), showLeaderboard: $("#show-leaderboard"),
+  leaderboard: $("#host-leaderboard"), leaderboardList: $("#teacher-leaderboard"),
   finishGame: $("#finish-game"), teams: $("#host-teams"), teamCount: $("#host-team-count"),
+  teamsPanel: $("#teams-panel"), hostLayout: $(".host-layout"),
 };
 
 let service;
@@ -148,7 +152,7 @@ function renderTeams() {
       remove.addEventListener("click", () => removeTeam(team));
       controls.append(remove);
       card.append(controls);
-    } else if (!["final_wager", "final_clue", "final_answer", "finished"].includes(currentSession?.state)) {
+    } else if (!["final_wager", "final_clue", "final_answer", "leaderboard", "finished"].includes(currentSession?.state)) {
       const controls = element("div", undefined, "score-controls");
       const value = Number(currentSession?.active_clue?.value ?? 100);
       const subtract = element("button", `−${money(value)}`, "button secondary");
@@ -158,7 +162,7 @@ function renderTeams() {
       controls.append(subtract, add);
       card.append(controls);
     }
-    if (["final_wager", "final_clue", "final_answer", "finished"].includes(currentSession?.state)) {
+    if (["final_wager", "final_clue", "final_answer"].includes(currentSession?.state)) {
       const response = element("div", undefined, "final-response");
       if (team.final_submitted) {
         response.append(
@@ -183,6 +187,19 @@ function renderTeams() {
       card.append(response);
     }
     elements.teams.append(card);
+  });
+}
+
+function renderLeaderboard() {
+  elements.leaderboardList.replaceChildren();
+  rankTeams(teams).forEach((team, index) => {
+    const row = element("div", undefined, `leaderboard-row${index === 0 ? " winner" : ""}`);
+    row.append(
+      element("span", team.place, "leaderboard-place"),
+      element("strong", team.name, "leaderboard-name"),
+      element("span", money(team.score), "leaderboard-score"),
+    );
+    elements.leaderboardList.append(row);
   });
 }
 
@@ -313,10 +330,13 @@ function renderHost() {
   clearInterval(countdownTimer);
   elements.hostCode.textContent = currentSession.join_code;
   elements.startGame.hidden = currentSession.state !== "lobby";
-  elements.beginFinal.hidden = currentSession.state === "lobby" || ["final_wager", "final_clue", "final_answer", "finished"].includes(currentSession.state);
+  elements.beginFinal.hidden = currentSession.state === "lobby" || ["final_wager", "final_clue", "final_answer", "leaderboard", "finished"].includes(currentSession.state);
   elements.board.hidden = currentSession.state !== "board" && currentSession.state !== "lobby";
   elements.clue.hidden = !["clue", "answer"].includes(currentSession.state);
   elements.final.hidden = !["final_wager", "final_clue", "final_answer", "finished"].includes(currentSession.state);
+  elements.leaderboard.hidden = currentSession.state !== "leaderboard";
+  elements.teamsPanel.hidden = currentSession.state === "leaderboard";
+  elements.hostLayout.classList.toggle("is-leaderboard", currentSession.state === "leaderboard");
   renderBoard(); renderTeams();
   if (!elements.clue.hidden) {
     const clue = currentSession.active_clue;
@@ -334,8 +354,15 @@ function renderHost() {
     elements.finalAnswer.textContent = currentSession.final_clue.answer;
     elements.finalAnswer.hidden = !["final_answer", "finished"].includes(currentSession.state);
     elements.revealFinal.hidden = !["final_wager", "final_clue"].includes(currentSession.state);
-    elements.finishGame.hidden = currentSession.state !== "final_answer";
+    const unscored = teams.filter((team) => team.final_submitted && !team.final_scored).length;
+    elements.finalScoringStatus.hidden = currentSession.state !== "final_answer";
+    elements.finalScoringStatus.textContent = unscored
+      ? `${unscored} locked response${unscored === 1 ? "" : "s"} still need scoring.`
+      : "Final scoring is complete. The leaderboard is ready.";
+    elements.showLeaderboard.hidden = currentSession.state !== "final_answer";
+    elements.showLeaderboard.disabled = unscored > 0;
   }
+  if (!elements.leaderboard.hidden) renderLeaderboard();
   lastHostState = JSON.stringify([currentSession, teams]);
 }
 
@@ -442,6 +469,7 @@ elements.saveBuzzSeconds.addEventListener("click", async () => {
   } catch (error) { message(error.message); }
 });
 elements.revealFinal.addEventListener("click", () => applySessionPatch({ state: "final_answer" }));
+elements.showLeaderboard.addEventListener("click", () => applySessionPatch({ state: "leaderboard" }));
 elements.finishGame.addEventListener("click", async () => {
   if (!confirm("Finish this game? Every team will be disconnected and returned to the join screen.")) return;
   try {

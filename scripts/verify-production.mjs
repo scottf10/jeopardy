@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { rankTeams } from "../public/js/leaderboard.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const npxCli = path.join(process.env.LOCALAPPDATA ?? "", "Programs", "nodejs", "node_modules", "npm", "bin", "npx-cli.js");
@@ -220,6 +221,17 @@ try {
   assert.equal(scored[0].final_scored, true);
   assert.equal(scored[0].score, -100);
 
+  dbQuery(`update public.jeopardy_sessions set state = 'leaderboard' where id = ${sqlLiteral(sessionId)}::uuid returning id::text;`);
+  const leaderboardState = await request(config, "rpc/jeopardy_team_state", { p_code: code, p_token: teams[0].token });
+  assert.equal(leaderboardState.response.status, 200);
+  assert.equal(leaderboardState.payload.state, "leaderboard");
+  const ranked = rankTeams(leaderboardState.payload.teams);
+  assert.equal(ranked.length, 5);
+  assert.equal(ranked[0].name, "Verification Team 2");
+  assert.equal(ranked[0].score, 100);
+  assert.equal(ranked.at(-1).name, "Verification Team 1");
+  assert.equal(ranked.at(-1).score, -100);
+
   const deletedSessionId = sessionId;
   dbQuery(`delete from public.jeopardy_sessions where id = ${sqlLiteral(deletedSessionId)}::uuid returning id::text;`);
   sessionId = undefined;
@@ -240,6 +252,7 @@ try {
     incorrectReopenedBuzzing: true,
     finalJeopardyCompleted: true,
     combinedFinalSubmissionLocked: true,
+    finalLeaderboardRankedAllTeams: true,
     endedSessionDisconnectedTeams: true,
     endedSessionDataCleared: true,
   }));
